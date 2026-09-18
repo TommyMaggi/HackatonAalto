@@ -1,27 +1,45 @@
-.PHONY: setup check validate gate examples run clean
+# Works on a bare machine: `make setup` builds its own virtualenv, so a locked-down
+# system python (common on macOS) cannot block you on day one.
 
-PY ?= python3
+PY    ?= python3
+VENV  := .venv
+VPY   := $(VENV)/bin/python
+RUNPY := $(shell [ -x $(VENV)/bin/python ] && echo $(VENV)/bin/python || echo $(PY))
+
+.PHONY: setup check validate gate examples doctor run clean
 
 setup:
-	$(PY) -m pip install -q jsonschema pyyaml duckdb
+	@echo "→ creating virtualenv in $(VENV)"
+	@$(PY) -m venv $(VENV)
+	@$(VPY) -m pip install -q --upgrade pip
+	@$(VPY) -m pip install -q jsonschema pyyaml duckdb
 	@mkdir -p artifacts
 	@cp -n artifacts/examples/*.json artifacts/ 2>/dev/null || true
 	@cp -n artifacts/examples/decision_log.jsonl artifacts/ 2>/dev/null || true
-	@echo "ready — example artifacts copied into artifacts/, build against those"
+	@echo "→ example artifacts copied into artifacts/ — build against those"
+	@echo "→ done. Now run: make check"
 
 check: gate validate
 
 validate:
-	@$(PY) tools/validate.py
+	@$(RUNPY) tools/validate.py
 
 examples:
-	@$(PY) tools/validate.py --examples
+	@$(RUNPY) tools/validate.py --examples
 
 gate:
-	@$(PY) tools/gate_check.py
+	@$(RUNPY) tools/gate_check.py
+
+doctor:
+	@echo "python:   $$($(RUNPY) -V 2>&1)"
+	@echo "using:    $(RUNPY)"
+	@$(RUNPY) -c "import jsonschema; print('jsonschema:', jsonschema.__version__)" 2>/dev/null || echo "jsonschema: MISSING — run make setup"
+	@$(RUNPY) -c "import yaml; print('pyyaml:   ok')" 2>/dev/null || echo "pyyaml:    MISSING — run make setup"
+	@echo "artifacts: $$(ls artifacts/*.json 2>/dev/null | wc -l | tr -d ' ') file(s)"
+	@echo "examples:  $$(ls artifacts/examples/*.json 2>/dev/null | wc -l | tr -d ' ') file(s)"
 
 run:
-	$(PY) -m pipeline.run --config config/llm.yaml
+	$(RUNPY) -m pipeline.run --config config/llm.yaml
 
 clean:
 	@rm -f artifacts/*.json artifacts/*.jsonl
