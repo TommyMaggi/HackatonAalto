@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecisionLogEntry",
+  "description": "One line of decision_log.jsonl. Append-only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entry_id",
+    "at",
+    "actor",
+    "stage",
+    "kind",
+    "summary"
+  ],
+  "properties": {
+    "entry_id": {
+      "type": "string"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "system",
+            "model",
+            "human"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "stage": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "inference",
+        "check",
+        "flag",
+        "diagnosis",
+        "model_call",
+        "human_review",
+        "override",
+        "config_change"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^col_[0-9]{3}$"
+      }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^ev_[0-9]{4,}$"
+      },
+      "description": "Evidence ids backing this claim. Empty is only valid when epistemic_status is 'assumed'."
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "epistemic_status": {
+      "enum": [
+        "inferred",
+        "assumed",
+        "uncertain"
+      ]
+    },
+    "model_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Present on every outbound model call. This is deliverable 8.",
+      "required": [
+        "call_id",
+        "provider",
+        "model",
+        "purpose",
+        "payload_kinds",
+        "payload_bytes",
+        "egress"
+      ],
+      "properties": {
+        "call_id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "payload_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Which derived artifact kinds were sent. Never raw rows."
+        },
+        "payload_bytes": {
+          "type": "integer"
+        },
+        "payload_sha256": {
+          "type": "string"
+        },
+        "egress": {
+          "type": "boolean",
+          "description": "False when the model ran locally."
+        },
+        "latency_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "from",
+        "to",
+        "rationale"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "e.g. semantics/col_012/role"
+        },
+        "from": {},
+        "to": {},
+        "rationale": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

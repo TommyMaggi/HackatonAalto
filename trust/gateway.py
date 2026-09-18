@@ -1,0 +1,256 @@
+"""The only door out.
+
+Every language-model call in this system passes through call_model(). Nothing
+else may import an LLM SDK — tools/gate_check.py fails the build if it does.
+
+The gate condition of the challenge is "raw data never leaves the operator's
+environment". That is enforced here structurally, not by convention: a payload
+that looks like records is rejected before any network call happens. If a stage
+gets a GateViolation, the stage must summarize further. That is the correct
+response, not a bypass.
+
+Swapping the model is a config change (config/llm.yaml), never a code change.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from trust.decision_log import DecisionLog
+
+_CONFIG_PATH = Path("config/llm.yaml")
+
+
+class GateViolation(Exception):
+    """Raised when a payload would send something that must not leave.
+
+    Never catch this to retry with the same payload. Summarize harder.
+    """
+
+
+def load_config(path: str | Path | None = None) -> dict[str, Any]:
+    with Path(path or _CONFIG_PATH).open("r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+# --------------------------------------------------------------------------
+# The gate
+# --------------------------------------------------------------------------
+
+def _walk(node: Any, path: str = "$"):
+    yield path, node
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from _walk(v, f"{path}.{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _walk(v, f"{path}[{i}]")
+
+
+def assert_no_raw_data(payload: dict[str, Any], gate_cfg: dict[str, Any]) -> None:
+    """Refuse anything that resembles raw records.
+
+    Four independent tests. Each one alone would be bypassable; together they
+    make an accidental leak very hard.
+    """
+    allowed = set(gate_cfg.get("allowed_payload_keys", []))
+    max_arr = int(gate_cfg.get("max_array_len", 32))
+    max_kb = int(gate_cfg.get("max_payload_kb", 64))
+    forbidden = [s.lower() for s in gate_cfg.get("forbidden_substrings", [])]
+
+    # 1. Only declared top-level keys.
+    if allowed:
+        extra = set(payload) - allowed
+        if extra:
+            raise GateViolation(
+                f"payload has undeclared top-level keys: {sorted(extra)}. "
+                f"Add them to gate.allowed_payload_keys in config/llm.yaml only if "
+                f"they carry derived summaries, never records."
+            )
+
+    # 2. No long numeric arrays. A time series is raw data wearing a hat.
+    for path, node in _walk(payload):
+        if isinstance(node, list) and len(node) > max_arr:
+            numeric = sum(1 for x in node if isinstance(x, (int, float)))
+            if numeric > max_arr // 2:
+                raise GateViolation(
+                    f"{path} is a {len(node)}-element numeric array. That is a data "
+                    f"series, not a summary. Send a statistic instead."
+                )
+
+    # 3. No original column names or label fields, anywhere, at any depth.
+    blob = json.dumps(payload, ensure_ascii=False).lower()
+    for token in forbidden:
+        if token in blob:
+            raise GateViolation(
+                f"payload contains the forbidden token {token!r}. Use col_NNN ids; "
+                f"labels never leave eval/."
+            )
+
+    # 4. Size ceiling. A payload this large is not a summary.
+    size_kb = len(blob.encode("utf-8")) / 1024
+    if size_kb > max_kb:
+        raise GateViolation(
+            f"payload is {size_kb:.1f} KB, over the {max_kb} KB ceiling. "
+            f"Aggregate further before sending."
+        )
+
+
+# --------------------------------------------------------------------------
+# Providers. Adding one is a function, not a refactor.
+# --------------------------------------------------------------------------
+
+def _call_local(cfg: dict, prompt: str, schema_out: dict | None) -> str:
+    """Ollama-compatible local endpoint. No egress."""
+    import urllib.request
+
+    body = {
+        "model": cfg["model"],
+        "prompt": prompt,
+        "stream": False,
+    }
+    if schema_out:
+        body["format"] = schema_out
+    req = urllib.request.Request(
+        f"{cfg['endpoint'].rstrip('/')}/api/generate",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=cfg.get("timeout_s", 120)) as resp:
+        return json.loads(resp.read())["response"]
+
+
+def _call_stub(cfg: dict, prompt: str, schema_out: dict | None) -> str:
+    """Offline stand-in so every stage is testable before any model exists.
+
+    Returns a syntactically valid, deliberately low-confidence answer. Nobody is
+    blocked waiting for a model to be installed.
+    """
+    return json.dumps({
+        "_stub": True,
+        "note": "Generated by trust.gateway stub provider. No model was called.",
+        "confidence": "low",
+        "epistemic_status": "assumed",
+    })
+
+
+_PROVIDERS = {
+    "local": _call_local,
+    "stub": _call_stub,
+    # eu_hosted / anthropic / google: add a function here and set provider in
+    # config/llm.yaml. No other file changes.
+}
+
+
+# --------------------------------------------------------------------------
+# The single entry point
+# --------------------------------------------------------------------------
+
+_CALL_SEQ = [0]
+
+
+def call_model(
+    purpose: str,
+    payload: dict[str, Any],
+    schema_out: dict[str, Any] | None = None,
+    *,
+    stage: str = "unknown",
+    config: dict[str, Any] | None = None,
+    log: DecisionLog | None = None,
+) -> dict[str, Any]:
+    """Send derived summaries to a model and return its structured answer.
+
+    Args:
+        purpose: why this call exists, in a few words. Goes in the decision log.
+        payload: derived artifacts only. Gate-checked before anything leaves.
+        schema_out: JSON Schema the answer must satisfy.
+        stage: the calling stage, e.g. "S4_semantics".
+
+    Raises:
+        GateViolation: the payload would leak raw data. Summarize further.
+    """
+    cfg = config or load_config()
+    llm_cfg = cfg["llm"]
+    gate_cfg = cfg.get("gate", {})
+    log = log or DecisionLog(cfg.get("logging", {}).get("decision_log"))
+
+    # The gate runs before anything is serialized for the wire.
+    assert_no_raw_data(payload, gate_cfg)
+
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    provider_name = llm_cfg["provider"]
+    provider = _PROVIDERS.get(provider_name)
+    if provider is None:
+        raise ValueError(
+            f"unknown provider {provider_name!r}. Add a function to _PROVIDERS "
+            f"in trust/gateway.py, then set it in config/llm.yaml."
+        )
+
+    prompt = _render_prompt(purpose, payload, schema_out)
+
+    _CALL_SEQ[0] += 1
+    call_id = f"call_{_CALL_SEQ[0]:04d}"
+    t0 = time.time()
+    raw = provider(llm_cfg, prompt, schema_out)
+    latency_ms = int((time.time() - t0) * 1000)
+
+    try:
+        answer = json.loads(raw)
+    except json.JSONDecodeError:
+        answer = {"_unparsed": raw, "confidence": "low", "epistemic_status": "uncertain"}
+
+    log.append(
+        stage=stage,
+        kind="model_call",
+        summary=f"{purpose} ({provider_name}/{llm_cfg['model']})",
+        actor_type="model",
+        actor_name=f"{provider_name}/{llm_cfg['model']}",
+        model_call={
+            "call_id": call_id,
+            "provider": provider_name,
+            "model": llm_cfg["model"],
+            "endpoint": llm_cfg.get("endpoint", ""),
+            "purpose": purpose,
+            "payload_kinds": sorted(k for k in payload if k != "instructions"),
+            "payload_bytes": len(blob.encode("utf-8")),
+            "payload_sha256": digest,
+            "egress": provider_name not in ("local", "stub"),
+            "latency_ms": latency_ms,
+        },
+    )
+    answer["_call_id"] = call_id
+    return answer
+
+
+def _render_prompt(purpose: str, payload: dict[str, Any], schema_out: dict | None) -> str:
+    """Build the prompt text from the payload.
+
+    Note what this does NOT do: it contains no domain vocabulary and no
+    hand-written description of what the data is. The content comes entirely
+    from the derived artifacts the caller passed in. That is what makes the
+    autonomy claim true rather than asserted.
+    """
+    parts = [
+        "You are analysing summaries derived from an undocumented tabular dataset.",
+        "You have no access to the underlying records and must reason only from the",
+        "statistics below. Ground every claim in a specific evidence_id. Where the",
+        "evidence does not support a confident answer, say so and lower your",
+        "confidence rather than guessing.",
+        "",
+        f"TASK: {purpose}",
+        "",
+        "DERIVED EVIDENCE:",
+        json.dumps(payload, ensure_ascii=False, indent=2),
+    ]
+    if schema_out:
+        parts += ["", "Answer with JSON matching this schema:",
+                  json.dumps(schema_out, ensure_ascii=False, indent=2)]
+    return "\n".join(parts)

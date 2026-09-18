@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Schema",
+  "description": "S1 output. The only place original names exist.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dataset_id",
+    "created_at",
+    "row_count",
+    "time_column",
+    "columns"
+  ],
+  "properties": {
+    "dataset_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "row_count": {
+      "type": "integer"
+    },
+    "time_column": {
+      "type": "string",
+      "pattern": "^col_[0-9]{3}$"
+    },
+    "group_column": {
+      "type": "string",
+      "pattern": "^col_[0-9]{3}$",
+      "description": "Series identifier, e.g. one simulation run."
+    },
+    "columns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "col_id",
+          "source_name",
+          "dtype"
+        ],
+        "properties": {
+          "col_id": {
+            "type": "string",
+            "pattern": "^col_[0-9]{3}$"
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "dtype": {
+            "enum": [
+              "float",
+              "int",
+              "bool",
+              "categorical",
+              "datetime",
+              "text"
+            ]
+          },
+          "role_hint": {
+            "enum": [
+              "time",
+              "group",
+              "signal",
+              "label",
+              "metadata"
+            ]
+          },
+          "quarantined": {
+            "type": "boolean",
+            "description": "True for label columns. Never readable by pipeline/."
+          }
+        }
+      }
+    }
+  }
+}

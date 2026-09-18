@@ -1,0 +1,36 @@
+# The only place a model is chosen. Swapping provider must never require a code change.
+# Deliverable 8 is demonstrated by editing this file and re-running.
+
+llm:
+  provider: local            # local | eu_hosted | anthropic | google
+  model: llama3.1:8b
+  endpoint: http://localhost:11434
+  api_key_env: null          # name of the env var holding the key; null for local
+  timeout_s: 120
+
+gate:
+  max_payload_kb: 64
+  # Only these top-level keys may appear in an outbound payload.
+  allowed_payload_keys:
+    - purpose
+    - column_summaries
+    - relation_summaries
+    - cluster_summaries
+    - check_definitions
+    - rule_text
+    - event_summary
+    - ranked_contributions
+    - candidate_roles
+    - instructions
+  # A payload containing more than this many numbers in one array looks like raw data.
+  max_array_len: 32
+  # Refuse anything that smells like a record dump, whatever it is called.
+  forbidden_substrings:
+    - "xmeas"
+    - "xmv"
+    - "faultNumber"
+    - "fault_status"
+
+logging:
+  decision_log: artifacts/decision_log.jsonl
+  redact_payloads: false     # payloads are derived-only by construction, so we keep them for the judges
