@@ -1,7 +1,9 @@
+@CONTRACTS.md
+
 # Trustworthy Process Monitor
 
-Read `CONTRACTS.md` first and treat it as binding. It is the shared contract for
-the whole team; this file adds only what is specific to working here with Claude
+The import above loads the shared contract into every session automatically —
+it is binding. This file adds only what is specific to working here with Claude
 Code.
 
 ## The four rules that fail CI
