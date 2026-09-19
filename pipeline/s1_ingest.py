@@ -64,5 +64,11 @@ class IngestionEngine:
         print("[S1] Ingestion complete. Data partitioned securely.")
 
 if __name__ == "__main__":
-    # For development, we keep limit_runs=2. For production demo, pass None.
-    IngestionEngine(csv_path='docs/te_process.csv' if os.path.exists('docs/te_process.csv') else 'data/te_process.csv').run(limit_runs=2)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dev", action="store_true", help="Run in dev mode (subset of data)")
+    args = parser.parse_args()
+    
+    limit = 2 if args.dev else None
+    csv_path = 'docs/te_process.csv' if os.path.exists('docs/te_process.csv') else 'data/te_process.csv'
+    IngestionEngine(csv_path=csv_path).run(limit_runs=limit)

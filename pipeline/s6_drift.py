@@ -44,42 +44,32 @@ DEFAULTS = {
 
 
 def load_runs(features_dir):
-    """Rebuild each run from the Parquet files. A run starts when col_time is 1.
-
-    The export can cut a run in pieces, so a piece that starts after time 1 is
-    glued to the piece that ends one sample earlier.
-    """
+    """Rebuild each run from the Parquet files. A run starts when col_time is 1."""
     runs = {}
     col_ids = None
-    for path in sorted(glob.glob(os.path.join(features_dir, "simulationRun=*", "*.parquet"))):
-        sim = int(float(re.search(r"simulationRun=([\d.]+)", path).group(1)))
-        df = pl.read_parquet(path)
+    for sim_dir in sorted(glob.glob(os.path.join(features_dir, "simulationRun=*"))):
+        sim_match = re.search(r"simulationRun=([\d.]+)", sim_dir)
+        if not sim_match: continue
+        sim = int(float(sim_match.group(1)))
+        df = pl.read_parquet(os.path.join(sim_dir, "*.parquet")).sort(TIME_COL)
         cols = [c for c in df.columns if c not in (TIME_COL, "simulationRun")]
         if col_ids is None:
             col_ids = cols
         elif cols != col_ids:
-            raise ValueError(f"{path}: columns differ from the other partitions")
+            raise ValueError(f"{sim_dir}: columns differ from the other partitions")
+            
         t = df[TIME_COL].to_numpy()
         x = df.select(cols).to_numpy()
-        cuts = np.where(np.diff(t) != 1)[0] + 1
-        pieces = list(zip(np.split(t, cuts), np.split(x, cuts)))
-        chains = [[p] for p in pieces if p[0][0] == 1]
-        loose = [p for p in pieces if p[0][0] != 1]
-        while loose:
-            progress = False
-            for piece in list(loose):
-                for chain in chains:
-                    if chain[-1][0][-1] == piece[0][0] - 1:
-                        chain.append(piece)
-                        loose.remove(piece)
-                        progress = True
-                        break
-            if not progress:
-                raise ValueError(f"{path}: cannot attach a piece starting at sample {loose[0][0][0]}")
-        for k, chain in enumerate(chains):
+        
+        cuts = np.where(t == 1)[0]
+        if len(cuts) == 0:
+            continue
+            
+        pieces = list(zip(np.split(t, cuts[1:]), np.split(x, cuts[1:])))
+        for k, (t_piece, x_piece) in enumerate(pieces):
             runs[f"sim{sim}_run{k:02d}"] = {
-                "t": np.concatenate([p[0] for p in chain]),
-                "x": np.concatenate([p[1] for p in chain]),
+                "t": t_piece,
+                "x": x_piece,
             }
     return runs, col_ids
 
