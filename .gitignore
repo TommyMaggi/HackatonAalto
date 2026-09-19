@@ -10,3 +10,6 @@ labels/
 artifacts/*.json
 artifacts/*.jsonl
 .DS_Store
+artifacts/**/*.json
+artifacts/**/*.jsonl
+*.zip
