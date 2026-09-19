@@ -177,6 +177,55 @@ async function loadJSON(path) {
   return res.json();
 }
 
+// The pipeline stages and the original contract carry the same information in
+// different containers. Normalise both into one shape so the UI has a single
+// thing to render. Added 19 Sep during integration.
+function normaliseInferences(semantics) {
+  // Form A: { inferences: [ {col_id, role, confidence, ...} ] }
+  if (Array.isArray(semantics.inferences)) return semantics.inferences;
+
+  // Form B: { col_001: {inferred_role, confidence, evidence_ids, ...}, ... }
+  return Object.entries(semantics)
+    .filter(([k, v]) => /^col_/.test(k) && v && typeof v === "object")
+    .map(([col_id, v]) => ({
+      col_id,
+      role: v.role || v.inferred_role || "—",
+      confidence: (v.confidence || "").toLowerCase() || "—",
+      // Not every stage emits this yet; say so rather than showing blank.
+      epistemic_status: v.epistemic_status || "not stated",
+      evidence_ids: Array.isArray(v.evidence_ids)
+        ? v.evidence_ids
+        : Object.values(v.evidence_ids || {}),
+      reasoning: v.reasoning || v.debug_prompt_generated || "",
+      human_override: v.human_override || null,
+    }));
+}
+
+// Evidence can arrive as a top-level array, or as a flat list of evidence
+// objects (relations.json), or embedded per column (profiles.json).
+function collectEvidence(doc) {
+  if (!doc) return [];
+  if (Array.isArray(doc)) return doc.filter((e) => e && e.evidence_id);
+  if (Array.isArray(doc.evidence)) return doc.evidence;
+
+  const out = [];
+  for (const [col_id, v] of Object.entries(doc)) {
+    if (!/^col_/.test(col_id) || !v || typeof v !== "object") continue;
+    const stats = v.statistics || {};
+    const ids = Array.isArray(v.evidence_ids) ? {} : (v.evidence_ids || {});
+    for (const [kind, id] of Object.entries(ids)) {
+      out.push({
+        evidence_id: id,
+        kind,
+        subject: [col_id],
+        value: kind in stats ? { [kind]: stats[kind] } : stats,
+        method: "statistical_profiling",
+      });
+    }
+  }
+  return out;
+}
+
 function mergeEvidence(...arrays) {
   const byId = {};
   for (const arr of arrays) {
@@ -334,8 +383,11 @@ async function init() {
       loadJSON("../artifacts/profiles.json"),
       loadJSON("../artifacts/relations.json"),
     ]);
-    state.inferences = semantics.inferences || [];
-    state.evidenceById = mergeEvidence(profiles.evidence, relations.evidence);
+    state.inferences = normaliseInferences(semantics);
+    state.evidenceById = mergeEvidence(
+      collectEvidence(profiles),
+      collectEvidence(relations),
+    );
     renderRows();
   } catch (err) {
     errorEl.textContent =

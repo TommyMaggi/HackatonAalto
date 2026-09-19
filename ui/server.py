@@ -67,9 +67,22 @@ def _write_semantics_atomic(doc: dict) -> None:
 
 
 def _find_inference(doc: dict, col_id: str) -> dict:
-    for inf in doc.get("inferences", []):
+    """Locate one inference, whichever shape semantics.json is in.
+
+    Form A: {"inferences": [{"col_id": "col_012", ...}, ...]}
+    Form B: {"col_012": {...}, ...}   <- what the pipeline stages emit
+
+    Returns the dict itself, so the caller's mutation lands in `doc` and gets
+    written back. Added 19 Sep during integration.
+    """
+    for inf in doc.get("inferences", []) or []:
         if inf.get("col_id") == col_id:
             return inf
+
+    node = doc.get(col_id)
+    if isinstance(node, dict):
+        return node
+
     raise ValueError(f"no inference for {col_id!r} in {SEMANTICS_PATH.name}")
 
 
@@ -170,7 +183,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         doc = _load_semantics()
         inf = _find_inference(doc, col_id)
-        original_role = inf.get("role")
+        # Form A calls it "role", Form B calls it "inferred_role".
+        original_role = inf.get("role") or inf.get("inferred_role")
 
         entry_id = log.append(
             stage="S4_semantics",

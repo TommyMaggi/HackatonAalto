@@ -281,7 +281,8 @@ async function init() {
   const errorEl = document.getElementById("error");
   try {
     const [entries, egress] = await Promise.all([
-      loadJSONL("../artifacts/examples/decision_log.jsonl"),
+      // Read the real log the pipeline writes, not the sample file.
+      loadJSONL("../artifacts/decision_log.jsonl"),
       loadJSON("/api/egress_summary"),
     ]);
     state.entries = entries;
