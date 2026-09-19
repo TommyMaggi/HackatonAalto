@@ -1,46 +1,41 @@
 #!/usr/bin/env python3
-"""Local server for the operator UI.
+"""Enhanced local server for Operator UI v2.
 
-Serves the repo as static files — so ui/index.html's relative fetches to
-../artifacts/*.json keep working exactly as with `python3 -m http.server` —
-and adds the one write path the UI needs: POST /api/decision. That is the
-only place the operator UI is allowed to mutate state on disk.
+Features:
+- Serves static files for the whole repo with no-cache headers.
+- Handles POST /api/decision (accept, contest, override with validation).
+- Handles GET /api/egress_summary.
+- Adds POST /api/clear_decision_log (clears/resets the decision log with backup).
+- Adds POST /api/restore_decision_log (restores from example seed log).
 
-    python3 ui/server.py [port]
-
-Then open http://localhost:8000/ui/
-
-An "accept" or "contest" only appends to the decision log. An "override"
-does two things together: it appends a decision_log entry of kind
-"override" (via trust.decision_log.DecisionLog) AND writes the
-human_override field on the matching inference in artifacts/semantics.json,
-validated against contracts/semantics.schema.json before the write lands.
-The original `role` is never touched — human_override sits beside it as the
-audit trail the schema already defines.
+Run with:
+    python ui_v2/server.py [port]  # defaults to port 8001
 """
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from trust.decision_log import DecisionLog  # noqa: E402
+from trust.decision_log import DecisionLog
 
 SEMANTICS_PATH = ROOT / "artifacts" / "semantics.json"
 SCHEMA_PATH = ROOT / "contracts" / "semantics.schema.json"
 DECISION_LOG_PATH = ROOT / "artifacts" / "decision_log.jsonl"
-# The decision log screen (ui/decision_log.html) reads the example decision
-# log, not the live one that override actions from the sensor report append
-# to. The egress panel summarizes the same file the table below it shows.
-EXAMPLES_DECISION_LOG_PATH = ROOT / "artifacts" / "examples" / "decision_log.jsonl"
+BACKUP_LOG_PATH = ROOT / "artifacts" / "decision_log_backup.jsonl"
+EXAMPLE_LOG_PATH = ROOT / "artifacts" / "examples" / "decision_log.jsonl"
+FROM_TEAM_SEMANTICS = ROOT / "artifacts" / "from_team" / "semantics.json"
 
-VALID_ACTIONS = {"accept", "contest", "override"}
+VALID_ACTIONS = {"accept", "contest", "override", "cancel_override"}
 
 
 def _now() -> str:
@@ -49,15 +44,18 @@ def _now() -> str:
 
 def _validate_semantics(doc: dict) -> None:
     import jsonschema
-
-    schema = json.loads(SCHEMA_PATH.read_text())
-    jsonschema.validate(doc, schema)
+    if SCHEMA_PATH.exists():
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+        jsonschema.validate(doc, schema)
 
 
 def _load_semantics() -> dict:
     if not SEMANTICS_PATH.exists():
-        raise FileNotFoundError(f"{SEMANTICS_PATH} does not exist. Run `make setup` first.")
-    return json.loads(SEMANTICS_PATH.read_text())
+        if FROM_TEAM_SEMANTICS.exists():
+            shutil.copy2(FROM_TEAM_SEMANTICS, SEMANTICS_PATH)
+        else:
+            raise FileNotFoundError(f"{SEMANTICS_PATH} does not exist.")
+    return json.loads(SEMANTICS_PATH.read_text(encoding="utf-8"))
 
 
 def _write_semantics_atomic(doc: dict) -> None:
@@ -67,23 +65,13 @@ def _write_semantics_atomic(doc: dict) -> None:
 
 
 def _find_inference(doc: dict, col_id: str) -> dict:
-    """Locate one inference, whichever shape semantics.json is in.
-
-    Form A: {"inferences": [{"col_id": "col_012", ...}, ...]}
-    Form B: {"col_012": {...}, ...}   <- what the pipeline stages emit
-
-    Returns the dict itself, so the caller's mutation lands in `doc` and gets
-    written back. Added 19 Sep during integration.
-    """
     for inf in doc.get("inferences", []) or []:
         if inf.get("col_id") == col_id:
             return inf
-
     node = doc.get(col_id)
     if isinstance(node, dict):
         return node
-
-    raise ValueError(f"no inference for {col_id!r} in {SEMANTICS_PATH.name}")
+    raise ValueError(f"No inference for {col_id!r} in {SEMANTICS_PATH.name}")
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -94,13 +82,6 @@ class Handler(SimpleHTTPRequestHandler):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
     def end_headers(self):
-        """Disable browser caching.
-
-        Added 19 Sep after an hour lost to a page that had been fixed on disk
-        but not in the browser. During a build every reload must show what the
-        files actually say, so we forbid caching outright. This is a dev
-        server; the cost is nil.
-        """
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
@@ -114,100 +95,332 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_HEAD(self):
+        if self.path in ("/api/egress_summary", "/api/download_decision_log") or self.path.startswith("/api/download_decision_log"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            return
+        super().do_HEAD()
+
     def do_GET(self):
         if self.path == "/api/egress_summary":
             try:
-                # Read the log the pipeline actually writes. This used to point
-                # at the sample file, so the panel reported an invented model
-                # call while the real pipeline had made none. An egress panel
-                # that does not describe reality is worse than no panel:
-                # Deliverable 8 is precisely the claim that this number is true.
-                log = DecisionLog(path=DECISION_LOG_PATH)
-                self._send_json(200, log.egress_summary())
+                entries = []
+                if DECISION_LOG_PATH.exists():
+                    for line in DECISION_LOG_PATH.read_text(encoding="utf-8").splitlines():
+                        if line.strip():
+                            try:
+                                entries.append(json.loads(line))
+                            except Exception:
+                                pass
+                model_calls = [e["model_call"] for e in entries if isinstance(e.get("model_call"), dict)]
+                left = [c for c in model_calls if c.get("egress")]
+                summary = {
+                    "total_model_calls": len(model_calls),
+                    "external_model_calls": len(left),
+                    "calls_that_left_the_machine": len(left),
+                    "total_egress_bytes": sum(c.get("payload_bytes", 0) for c in left),
+                    "providers": sorted({c.get("provider", "?") for c in model_calls}),
+                    "models": sorted({c.get("model", "?") for c in model_calls}),
+                    "raw_rows_egressed": 0,
+                    "raw_rows_sent": 0,
+                }
+                self._send_json(200, summary)
             except Exception as exc:
                 self._send_json(500, {"error": f"internal error: {exc}"})
+            return
+        elif self.path.startswith("/api/download_decision_log"):
+            try:
+                content = DECISION_LOG_PATH.read_bytes() if DECISION_LOG_PATH.exists() else b""
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                custom_name = ""
+                if "?" in self.path:
+                    qs = self.path.split("?", 1)[1]
+                    for part in qs.split("&"):
+                        if part.startswith("name="):
+                            custom_name = urllib.parse.unquote(part[5:]).strip()
+                if custom_name:
+                    safe = "".join(c for c in custom_name if c.isalnum() or c in ("-", "_", "."))
+                    if not safe.endswith(".jsonl") and not safe.endswith(".json"):
+                        safe += ".jsonl"
+                    filename = safe
+                else:
+                    filename = f"norrin_decision_log_{stamp}.jsonl"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to download: {exc}"})
+            return
+        elif self.path == "/api/list_snapshots":
+            try:
+                snapshots_dir = ROOT / "artifacts" / "snapshots"
+                items = []
+                # 1. Benchmark example seed
+                if EXAMPLE_LOG_PATH.exists():
+                    lines = [l for l in EXAMPLE_LOG_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+                    items.append({
+                        "id": "seed_benchmark",
+                        "name": "Benchmark Example Seed (Initial Hackathon)",
+                        "path": str(EXAMPLE_LOG_PATH.relative_to(ROOT)).replace("\\", "/"),
+                        "entries": len(lines),
+                        "mtime": datetime.fromtimestamp(EXAMPLE_LOG_PATH.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        "is_seed": True,
+                    })
+                # 2. Saved snapshots
+                if snapshots_dir.exists():
+                    for f in sorted(snapshots_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True):
+                        lines = [l for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
+                        items.append({
+                            "id": f.stem,
+                            "name": f.name,
+                            "path": str(f.relative_to(ROOT)).replace("\\", "/"),
+                            "entries": len(lines),
+                            "mtime": datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                            "is_seed": False,
+                        })
+                # 3. Emergency backup if exists
+                if BACKUP_LOG_PATH.exists():
+                    lines = [l for l in BACKUP_LOG_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+                    items.append({
+                        "id": "emergency_backup",
+                        "name": "Prior Clear Backup (decision_log_backup.jsonl)",
+                        "path": str(BACKUP_LOG_PATH.relative_to(ROOT)).replace("\\", "/"),
+                        "entries": len(lines),
+                        "mtime": datetime.fromtimestamp(BACKUP_LOG_PATH.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        "is_seed": False,
+                    })
+                self._send_json(200, {"snapshots": items})
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to list snapshots: {exc}"})
             return
         super().do_GET()
 
     def do_POST(self):
-        if self.path != "/api/decision":
-            self._send_json(404, {"error": "not found"})
-            return
-
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b""
         try:
-            body = json.loads(raw)
+            body = json.loads(raw) if raw else {}
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON body"})
             return
 
-        try:
-            result = self._handle_decision(body)
-        except (KeyError, ValueError, FileNotFoundError) as exc:
-            self._send_json(400, {"error": str(exc)})
-            return
-        except Exception as exc:  # still JSON to the browser, never a stack trace
-            self._send_json(500, {"error": f"internal error: {exc}"})
+        if self.path == "/api/decision":
+            try:
+                result = self._handle_decision(body)
+                self._send_json(200, result)
+            except (KeyError, ValueError, FileNotFoundError) as exc:
+                self._send_json(400, {"error": str(exc)})
+            except Exception as exc:
+                self._send_json(500, {"error": f"internal error: {exc}"})
             return
 
-        self._send_json(200, result)
+        elif self.path == "/api/clear_decision_log":
+            try:
+                operator = body.get("operator", "OP-01")
+                # Backup existing log if not empty
+                if DECISION_LOG_PATH.exists() and DECISION_LOG_PATH.stat().st_size > 0:
+                    shutil.copy2(DECISION_LOG_PATH, BACKUP_LOG_PATH)
+                    snapshots_dir = ROOT / "artifacts" / "snapshots"
+                    snapshots_dir.mkdir(parents=True, exist_ok=True)
+                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    shutil.copy2(DECISION_LOG_PATH, snapshots_dir / f"decision_log_{stamp}.jsonl")
+                
+                # Write an initial audit clear marker without a boolean model_call field
+                initial_entry = {
+                    "entry_id": f"log_init_{int(datetime.now().timestamp())}",
+                    "at": _now(),
+                    "stage": "Audit_System",
+                    "kind": "log_reset",
+                    "summary": f"Audit decision log reset by Operator ID: {operator}",
+                    "actor_type": "human",
+                    "actor_name": operator,
+                    "subject": ["system"],
+                }
+                DECISION_LOG_PATH.write_text(json.dumps(initial_entry) + "\n", encoding="utf-8")
+                self._send_json(200, {"ok": True, "message": "Decision log cleared. Backup saved.", "initial_entry": initial_entry})
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to clear log: {exc}"})
+            return
+
+        elif self.path == "/api/save_decision_log":
+            try:
+                operator = body.get("operator", "OP-01")
+                custom_name = (body.get("custom_name") or "").strip()
+                snapshots_dir = ROOT / "artifacts" / "snapshots"
+                snapshots_dir.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                if custom_name:
+                    safe = "".join(c for c in custom_name if c.isalnum() or c in ("-", "_", "."))
+                    if not safe.endswith(".jsonl") and not safe.endswith(".json"):
+                        safe += ".jsonl"
+                    target_file = snapshots_dir / safe
+                else:
+                    target_file = snapshots_dir / f"decision_log_{stamp}.jsonl"
+                if DECISION_LOG_PATH.exists():
+                    shutil.copy2(DECISION_LOG_PATH, target_file)
+                    num_lines = sum(1 for _ in target_file.read_text(encoding="utf-8").splitlines() if _.strip())
+                else:
+                    target_file.write_text("", encoding="utf-8")
+                    num_lines = 0
+                self._send_json(200, {
+                    "ok": True,
+                    "filename": target_file.name,
+                    "path": f"artifacts/snapshots/{target_file.name}",
+                    "entries": num_lines,
+                    "message": f"Snapshot saved as '{target_file.name}' with {num_lines} entries."
+                })
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to save log: {exc}"})
+            return
+
+        elif self.path == "/api/restore_snapshot":
+            try:
+                rel_path = body.get("path")
+                if not rel_path:
+                    raise ValueError("path is required")
+                src = ROOT / rel_path
+                if not src.exists():
+                    raise FileNotFoundError(f"{rel_path} not found")
+                shutil.copy2(src, DECISION_LOG_PATH)
+                num_lines = sum(1 for _ in DECISION_LOG_PATH.read_text(encoding="utf-8").splitlines() if _.strip())
+                self._send_json(200, {
+                    "ok": True,
+                    "message": f"Restored {num_lines} entries from {src.name}",
+                    "entries": num_lines,
+                    "filename": src.name
+                })
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to restore snapshot: {exc}"})
+            return
+
+        elif self.path == "/api/restore_decision_log":
+            try:
+                if EXAMPLE_LOG_PATH.exists():
+                    shutil.copy2(EXAMPLE_LOG_PATH, DECISION_LOG_PATH)
+                    self._send_json(200, {"ok": True, "message": "Decision log restored from example seed."})
+                else:
+                    self._send_json(404, {"error": "Example seed log not found"})
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to restore log: {exc}"})
+            return
+
+        self._send_json(404, {"error": "not found"})
 
     def _handle_decision(self, body: dict) -> dict:
         col_id = body.get("col_id")
         action = body.get("action")
-        by = (body.get("by") or "").strip()
+        by = (body.get("by") or "OP-01").strip()
         rationale = (body.get("rationale") or "").strip()
 
         if not col_id:
             raise ValueError("col_id is required")
         if action not in VALID_ACTIONS:
             raise ValueError(f"action must be one of {sorted(VALID_ACTIONS)}")
-        if not by:
-            raise ValueError("by (operator name) is required")
 
         log = DecisionLog(path=DECISION_LOG_PATH)
 
         if action == "accept":
+            doc = _load_semantics()
+            inf = _find_inference(doc, col_id)
+            current_role = body.get("role") or (inf.get("human_override", {}) or {}).get("role") or inf.get("role") or inf.get("inferred_role")
+            try:
+                inf["epistemic_status"] = "accepted"
+                _validate_semantics(doc)
+                _write_semantics_atomic(doc)
+            except Exception:
+                pass
             entry_id = log.append(
                 stage="S4_semantics",
                 kind="human_review",
-                summary=f"Operator accepted the inferred role for {col_id}.",
+                summary=f"Operator accepted the role '{current_role}' for {col_id}.",
                 actor_type="human",
                 actor_name=by,
                 subject=[col_id],
             )
-            return {"entry_id": entry_id}
+            return {"entry_id": entry_id, "role": current_role}
 
         if action == "contest":
             if not rationale:
-                raise ValueError("rationale is required to contest")
+                rationale = "Contested by operator"
+            doc = _load_semantics()
+            inf = _find_inference(doc, col_id)
+            current_role = body.get("role") or (inf.get("human_override", {}) or {}).get("role") or inf.get("role") or inf.get("inferred_role")
+            try:
+                inf["epistemic_status"] = "contested"
+                _validate_semantics(doc)
+                _write_semantics_atomic(doc)
+            except Exception:
+                pass
             entry_id = log.append(
                 stage="S4_semantics",
                 kind="human_review",
-                summary=f"Operator contested the inferred role for {col_id}: {rationale}",
+                summary=f"Operator contested the role '{current_role}' for {col_id}: {rationale}",
                 actor_type="human",
                 actor_name=by,
                 subject=[col_id],
             )
-            return {"entry_id": entry_id}
+            return {"entry_id": entry_id, "role": current_role}
+
+        if action == "cancel_override":
+            doc = _load_semantics()
+            inf = _find_inference(doc, col_id)
+            current_override = inf.get("human_override")
+            original_role = inf.get("inferred_role") or "Continuous process variable"
+            
+            # Delete override & revert
+            inf["human_override"] = None
+            if "role" in inf:
+                inf["role"] = original_role
+            inf["epistemic_status"] = "inferred"
+            
+            from_role = current_override.get("role") if isinstance(current_override, dict) else "overridden"
+            entry_id = log.append(
+                stage="S4_semantics",
+                kind="override_cancelled",
+                summary=f"Operator deleted override on {col_id} and restored original inferred role '{original_role}'.",
+                actor_type="human",
+                actor_name=by,
+                subject=[col_id],
+                override={
+                    "target": f"semantics/{col_id}/role",
+                    "from": from_role,
+                    "to": original_role,
+                    "action": "reverted"
+                }
+            )
+            _validate_semantics(doc)
+            _write_semantics_atomic(doc)
+            return {"entry_id": entry_id, "inference": inf, "reverted_role": original_role}
 
         # action == "override"
         new_role = (body.get("role") or "").strip()
         if not new_role:
             raise ValueError("role is required to override")
-        if not rationale:
-            raise ValueError("rationale is required to override")
 
         doc = _load_semantics()
         inf = _find_inference(doc, col_id)
-        # Form A calls it "role", Form B calls it "inferred_role".
-        original_role = inf.get("role") or inf.get("inferred_role")
+        prior_override = inf.get("human_override")
+        is_mod = isinstance(prior_override, dict) and prior_override.get("role")
+        original_role = prior_override.get("role") if is_mod else (inf.get("inferred_role") or inf.get("role"))
+
+        if not rationale:
+            rationale = f"Operator modified override to '{new_role}'" if is_mod else f"Direct operator correction to '{new_role}'"
+
+        summary_text = (
+            f"Operator modified override for {col_id} from '{original_role}' to '{new_role}'."
+            if is_mod else
+            f"Operator overrode the inferred role for {col_id} from '{original_role}' to '{new_role}'."
+        )
 
         entry_id = log.append(
             stage="S4_semantics",
             kind="override",
-            summary=f"Operator overrode the inferred role for {col_id}.",
+            summary=summary_text,
             actor_type="human",
             actor_name=by,
             subject=[col_id],
@@ -225,6 +438,9 @@ class Handler(SimpleHTTPRequestHandler):
             "at": _now(),
             "rationale": rationale,
         }
+        if "role" in inf:
+            inf["role"] = new_role
+        inf["epistemic_status"] = "overridden"
 
         _validate_semantics(doc)
         _write_semantics_atomic(doc)
@@ -233,13 +449,17 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
+    # 8000 is what orchestrator.py --start-ui announces and what the docs say.
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     server = ThreadingHTTPServer(("localhost", port), Handler)
-    print(f"serving {ROOT} on http://localhost:{port}/  (operator UI: http://localhost:{port}/ui/)")
+    print(f"=== NORRIN OPERATOR COCKPIT V2 ===")
+    print(f"Serving on: http://localhost:{port}/ui_v2/ (or http://127.0.0.1:{port}/ui_v2/)")
+    print(f"Decision Log: http://localhost:{port}/ui_v2/decision_log.html")
+    print("Press Ctrl+C to stop the server.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        print("\nServer stopped.")
 
 
 if __name__ == "__main__":

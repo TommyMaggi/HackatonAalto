@@ -2,416 +2,1138 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Sensor Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NORRIN — Sensor Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: sans-serif; margin: 2rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ccc; vertical-align: top; }
-  tr.row { cursor: pointer; }
-  tr.row:hover { background: #f2f2f2; }
-  tr.detail td { background: #fafafa; padding: 0.6rem; }
-  .evidence-card { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.4rem 0; }
-  .evidence-card.missing { border-color: #c00; color: #c00; }
-  .evidence-field { margin: 0.15rem 0; }
-  .evidence-field b { display: inline-block; min-width: 6rem; }
-  .conf-high { color: #146c2e; }
-  .conf-medium { color: #8a6d00; }
-  .conf-low { color: #a12626; }
-  #error { color: #c00; white-space: pre-wrap; font-family: monospace; }
-  .operator-bar { margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; }
-  .operator-bar input { padding: 0.3rem 0.5rem; font: inherit; }
-  tr.row.overridden { background: #fff4d6; }
-  tr.row.overridden:hover { background: #ffe8b0; }
-  .override-badge {
-    display: inline-block; background: #a12626; color: #fff; font-size: 0.68rem;
-    font-weight: bold; letter-spacing: 0.02em; padding: 0.1rem 0.4rem; border-radius: 3px;
-    margin-left: 0.4rem; vertical-align: middle;
+  :root {
+    --bg: #ffffff;
+    --bg-subtle: #f8fafc;
+    --bg-muted: #f1f5f9;
+    --border: #e2e8f0;
+    --border-dark: #cbd5e1;
+    
+    --text: #0f172a;
+    --text-muted: #475569;
+    --text-subtle: #94a3b8;
+    
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --green-border: #86efac;
+    
+    --orange: #ea580c;
+    --orange-bg: #fff7ed;
+    --orange-border: #fdba74;
+    
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --red-border: #fca5a5;
   }
-  .role-original { text-decoration: line-through; color: #888; margin-left: 0.4rem; }
-  .override-meta { font-size: 0.78rem; color: #555; margin-top: 0.3rem; }
-  .actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
-  .actions button {
-    font-size: 0.78rem; padding: 0.2rem 0.5rem; cursor: pointer;
-    border: 1px solid #999; border-radius: 3px; background: #fff;
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 1.75rem 2.5rem 4rem;
+    max-width: 1320px;
+    margin: 0 auto;
   }
-  .btn-accept { border-color: #146c2e; color: #146c2e; }
-  .btn-contest { border-color: #8a6d00; color: #8a6d00; }
-  .btn-override { border-color: #a12626; color: #a12626; }
-  .inline-form { margin-top: 0.4rem; display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: flex-start; }
-  .inline-form input, .inline-form textarea { font: inherit; padding: 0.2rem 0.4rem; }
-  .inline-form input { min-width: 12rem; }
-  .inline-form textarea { min-width: 14rem; }
-  .flash { font-size: 0.78rem; margin-top: 0.3rem; }
-  .flash.ok { color: #146c2e; }
-  .flash.err { color: #a12626; }
-  .topnav { margin-bottom: 0.5rem; font-size: 0.85rem; }
-  .topnav a { margin-right: 1rem; color: #555; text-decoration: none; }
-  .topnav a.current { color: #000; font-weight: bold; }
-  .topnav a:hover { text-decoration: underline; }
+
+  code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Header & Branding */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .brand-group {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+
+  /* Official Norrin Logo Icon */
+  .brand-logo-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 7px;
+    object-fit: cover;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    border: 1px solid var(--border);
+  }
+
+  .brand-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .brand-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    line-height: 1.1;
+  }
+
+  .brand-subtitle {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* View Slider / Segmented Control */
+  .view-slider {
+    display: inline-flex;
+    align-items: center;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    padding: 3px;
+    border-radius: 9999px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+  }
+
+  .slider-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 1.25rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #64748b;
+    text-decoration: none;
+    border-radius: 9999px;
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+  }
+
+  .slider-tab:hover {
+    color: #0f172a;
+  }
+
+  .slider-tab.active {
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 600;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  }
+
+  /* Operator ID Control (No green dot) */
+  .operator-id-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-dark);
+    border-radius: 6px;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .op-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+  }
+
+  .op-id-field {
+    border: none;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    width: 80px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .op-id-field:focus {
+    border-color: var(--text);
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+  }
+
+  /* Stats summary strip */
+  .stats-strip {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
+  .stat-item b {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-right: 0.25rem;
+  }
+
+  .stat-divider { color: var(--border-dark); }
+
+  /* Just 'Trusted' (or 'Untrusted') */
+  .gate-indicator {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    color: var(--green);
+  }
+  .gate-indicator.untrusted { color: var(--red); }
+  .gate-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* Controls: Search & Filter Tabs */
+  .controls-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .filter-tabs {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .filter-btn {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .filter-btn:hover { color: var(--text); border-color: var(--border-dark); }
+  .filter-btn.active {
+    background: var(--text);
+    color: #fff;
+    border-color: var(--text);
+  }
+
+  .search-box {
+    position: relative;
+  }
+
+  .search-box input {
+    padding: 0.4rem 0.75rem 0.4rem 2rem;
+    font-size: 0.82rem;
+    border: 1px solid var(--border-dark);
+    border-radius: 5px;
+    width: 260px;
+    outline: none;
+    color: var(--text);
+  }
+  .search-box input:focus { border-color: var(--text); }
+
+  .search-icon {
+    position: absolute;
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-subtle);
+    pointer-events: none;
+  }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-dark);
+  }
+
+  tr.row {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  tr.row:hover { background: var(--bg-subtle); }
+  tr.row.overridden { background: #fffbfb; }
+
+  td {
+    padding: 0.75rem 0.75rem;
+    vertical-align: middle;
+  }
+
+  .col-id {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .role-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Overridden badge in RED */
+  .override-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--red);
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+    padding: 0.12rem 0.45rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+  .override-tag.clickable {
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .override-tag.clickable:hover {
+    background: #fee2e2;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .conf-high { color: var(--green); }
+  .conf-medium { color: var(--orange); }
+  .conf-low { color: var(--red); }
+
+  /* Actions Container */
+  .actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  /* Action Buttons */
+  .btn-act {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.28rem 0.65rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+
+  .btn-accept {
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid var(--green-border);
+  }
+  .btn-accept:hover {
+    background: var(--green);
+    color: #ffffff;
+    border-color: var(--green);
+  }
+
+  .btn-contest {
+    background: var(--orange-bg);
+    color: var(--orange);
+    border: 1px solid var(--orange-border);
+  }
+  .btn-contest:hover {
+    background: var(--orange);
+    color: #ffffff;
+    border-color: var(--orange);
+  }
+
+  .btn-override {
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid var(--red-border);
+  }
+  .btn-override:hover {
+    background: var(--red);
+    color: #ffffff;
+    border-color: var(--red);
+  }
+
+  /* Cancel Override Button */
+  .btn-cancel-ov {
+    background: var(--bg-muted);
+    color: var(--text-muted);
+    border: 1px solid var(--border-dark);
+  }
+  .btn-cancel-ov:hover {
+    background: var(--bg-subtle);
+    color: var(--text);
+    border-color: var(--text);
+  }
+
+  /* Inline Free-Text Override Editor in Role Cell */
+  .inline-role-editor {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    animation: popIn 0.15s ease-out;
+    width: 100%;
+  }
+
+  .inline-role-input {
+    flex: 1;
+    min-width: 220px;
+    max-width: 380px;
+    padding: 0.32rem 0.6rem;
+    font-size: 0.78rem;
+    font-family: inherit;
+    border: 1.5px solid var(--red);
+    border-radius: 4px;
+    background: #ffffff;
+    color: var(--text);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.1);
+  }
+  .inline-role-input:focus {
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+  }
+
+  .btn-save-override {
+    background: var(--red);
+    color: #fff;
+    border: 1px solid var(--red);
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 0.28rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-save-override:hover { background: #b91c1c; }
+
+  .btn-cancel-override {
+    background: #fff;
+    color: var(--text-muted);
+    border: 1px solid var(--border-dark);
+    font-size: 0.74rem;
+    padding: 0.28rem 0.45rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-cancel-override:hover { background: var(--bg-muted); color: var(--text); }
+
+  /* Delete Override Button (Distinct subtle red styling) */
+  .btn-delete-ov {
+    background: #fff;
+    color: var(--red);
+    border: 1px solid var(--red-border);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.28rem 0.65rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-delete-ov:hover {
+    background: var(--red-bg);
+    border-color: var(--red);
+  }
+
+  /* Micro-actions next to Overridden badge */
+  .badge-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 0 0.15rem;
+    line-height: 1;
+    border-radius: 3px;
+    transition: all 0.12s ease;
+  }
+  .badge-btn:hover { color: var(--red); }
+
+  /* Notification Bar BELOW THE ROW */
+  tr.feedback-subrow {
+    animation: slideDown 0.2s ease-out;
+  }
+  tr.feedback-subrow td {
+    padding: 0.45rem 1.25rem 0.65rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .row-feedback-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0.85rem;
+    border-radius: 5px;
+    font-size: 0.76rem;
+    font-weight: 600;
+  }
+  .row-feedback-bar.green {
+    background: var(--green-bg);
+    color: var(--green);
+    border-left: 3px solid var(--green);
+  }
+  .row-feedback-bar.orange {
+    background: var(--orange-bg);
+    color: var(--orange);
+    border-left: 3px solid var(--orange);
+  }
+  .row-feedback-bar.red {
+    background: var(--red-bg);
+    color: var(--red);
+    border-left: 3px solid var(--red);
+  }
+
+  .btn-dismiss-feedback {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    opacity: 0.7;
+    margin-left: 0.5rem;
+  }
+  .btn-dismiss-feedback:hover { opacity: 1; }
+
+  @keyframes slideDown {
+    0% { opacity: 0; transform: translateY(-4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes popIn {
+    0% { transform: scale(0.92); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Expanded Evidence Detail */
+  tr.detail-row {
+    background: var(--bg-subtle);
+  }
+
+  .detail-box {
+    padding: 1rem 1.25rem;
+    border-left: 3px solid var(--border-dark);
+    margin: 0.25rem 0;
+  }
+
+  .reasoning-text {
+    color: var(--text);
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .evidence-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .evidence-item {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.75rem;
+  }
+
+  .evidence-title {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+  }
 </style>
 </head>
 <body>
 
-<nav class="topnav">
-  <a class="current" href="index.html">Sensor report</a>
-  <a href="decision_log.html">Decision log</a>
-</nav>
-<h1>Sensor Report</h1>
-<div class="operator-bar">
-  <label for="operator-name">Operator</label>
-  <input id="operator-name" type="text" placeholder="your name or id" autocomplete="off">
+<!-- Header -->
+<header>
+  <div class="brand-group">
+    <!-- Official Norrin Logo Image -->
+    <img src="assets/norrin_icon.png" alt="Norrin Logo" class="brand-logo-img">
+    <div class="brand-info">
+      <div class="brand-title">NORRIN</div>
+      <div class="brand-subtitle">Telemetry Guard</div>
+    </div>
+  </div>
+
+  <!-- Sliding Segmented View Nav -->
+  <nav class="view-slider">
+    <a href="index.html" class="slider-tab active">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Sensor report
+    </a>
+    <a href="decision_log.html" class="slider-tab">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Decision log
+    </a>
+  </nav>
+
+  <!-- Operator ID (Strictly ID, NO green dot) -->
+  <div class="operator-id-badge">
+    <span class="op-label">OPERATOR ID:</span>
+    <input type="text" id="op-id-input" class="op-id-field mono" value="OP-01" spellcheck="false" title="Click to change Operator ID">
+  </div>
+</header>
+
+<!-- Stats Strip -->
+<div class="stats-strip">
+  <div class="stat-item"><b id="stat-total">52</b> channels monitored</div>
+  <div class="stat-divider">·</div>
+  <div class="stat-item"><b id="stat-actuators">11</b> actuators</div>
+  <div class="stat-divider">·</div>
+  <div class="stat-item"><b id="stat-sensors">41</b> sensors</div>
+  <div class="stat-divider">·</div>
+  <div class="stat-item"><b id="stat-overrides">0</b> overrides</div>
+  
+  <!-- Just 'Trusted' / 'Untrusted' -->
+  <div class="gate-indicator" id="gate-status">
+    <span class="gate-dot"></span>
+    <span id="gate-text">Trusted</span>
+  </div>
 </div>
-<div id="error"></div>
-<table id="report">
+
+<!-- Controls -->
+<div class="controls-bar">
+  <div class="filter-tabs">
+    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All (<span id="count-all">52</span>)</button>
+    <button class="filter-btn" data-filter="actuator" onclick="setFilter('actuator')">Actuators</button>
+    <button class="filter-btn" data-filter="sensor" onclick="setFilter('sensor')">Sensors</button>
+    <button class="filter-btn" data-filter="override" onclick="setFilter('override')">Overrides</button>
+  </div>
+
+  <div class="search-box">
+    <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="search" placeholder="Filter by channel or role..." oninput="handleSearch()">
+  </div>
+</div>
+
+<!-- Table -->
+<table>
   <thead>
-    <tr><th>col_id</th><th>role</th><th>confidence</th><th>epistemic_status</th><th>operator</th></tr>
+    <tr>
+      <th style="width: 100px;">Channel</th>
+      <th>Inferred Functional Role</th>
+      <th style="width: 140px;">Confidence</th>
+      <th style="width: 130px;">Status</th>
+      <th style="width: 320px; text-align: right;">Actions</th>
+    </tr>
   </thead>
-  <tbody id="report-body"></tbody>
+  <tbody id="table-body">
+    <tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">Loading telemetry profiles...</td></tr>
+  </tbody>
 </table>
 
 <script>
-// state: one flat object, no framework.
-const state = {
-  inferences: [],      // raw semantics.json inferences[]
-  evidenceById: {},    // merged evidence, keyed by evidence_id
-  expanded: new Set(), // col_ids currently expanded
-  uiByCol: {},          // col_id -> { formOpen: null|"contest"|"override", flash: null|{ok, text} }
+let state = {
+  inferences: [],
+  evidenceById: {},
+  expanded: new Set(),
+  activeFilter: 'all',
+  search: '',
+  editingOverride: null, // col_id currently inline overriding
+  feedbacks: {},          // col_id -> { type: 'green'|'orange'|'red', text: '...', time: '...' }
 };
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
+// Operator ID Management (Strictly ID, no name/role)
+function getOperatorID() {
+  return localStorage.getItem("norrin_operator_id") || "OP-01";
 }
 
-function uiFor(colId) {
-  if (!state.uiByCol[colId]) state.uiByCol[colId] = { formOpen: null, flash: null };
-  return state.uiByCol[colId];
+function initOperatorID() {
+  const input = document.getElementById("op-id-input");
+  input.value = getOperatorID();
+  input.addEventListener("input", () => {
+    const val = input.value.trim() || "OP-01";
+    localStorage.setItem("norrin_operator_id", val);
+  });
 }
 
-function operatorName() {
-  return (document.getElementById("operator-name").value || "").trim();
+async function loadJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.statusText}`);
+  return res.json();
 }
 
-function saveOperatorName() {
-  try { localStorage.setItem("operatorName", operatorName()); } catch (e) { /* ignore */ }
+function normaliseInferences(semantics) {
+  if (Array.isArray(semantics.inferences)) return semantics.inferences;
+  return Object.entries(semantics)
+    .filter(([k, v]) => /^col_/.test(k) && v && typeof v === "object")
+    .map(([col_id, data]) => {
+      const originalInferred = data.inferred_role || data.role || "Continuous process variable";
+      const activeRole = (data.human_override && data.human_override.role) ? data.human_override.role : originalInferred;
+      return {
+        col_id,
+        inferred_role: originalInferred,
+        role: activeRole,
+        confidence: data.confidence || "medium",
+        epistemic_status: data.epistemic_status || (data.human_override ? "overridden" : "inferred"),
+        evidence_ids: data.evidence_ids || [],
+        reasoning: data.reasoning || "",
+        human_override: data.human_override || null
+      };
+    });
 }
 
-function loadOperatorName() {
-  try { return localStorage.getItem("operatorName") || ""; } catch (e) { return ""; }
+function collectEvidence(container) {
+  const map = {};
+  if (!container) return map;
+  const list = Array.isArray(container.evidence) ? container.evidence :
+               Array.isArray(container.profiles) ? container.profiles : [];
+  for (const item of list) {
+    if (item && item.evidence_id) map[item.evidence_id] = item;
+  }
+  return map;
+}
+
+function mergeEvidence(...maps) {
+  return Object.assign({}, ...maps);
+}
+
+function render() {
+  const tbody = document.getElementById("table-body");
+  tbody.innerHTML = "";
+
+  const q = state.search.toLowerCase();
+  const filtered = state.inferences.filter(item => {
+    const match = item.col_id.toLowerCase().includes(q) || item.role.toLowerCase().includes(q);
+    if (!match) return false;
+
+    const isActuator = item.role.toLowerCase().includes('valve') || item.role.toLowerCase().includes('actuator') || item.role.toLowerCase().includes('manipulated');
+    if (state.activeFilter === 'actuator') return isActuator;
+    if (state.activeFilter === 'sensor') return !isActuator;
+    if (state.activeFilter === 'override') return !!item.human_override;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 2rem; color: var(--text-muted);">No channels found.</td></tr>`;
+    return;
+  }
+
+  for (const item of filtered) {
+    const tr = document.createElement("tr");
+    tr.className = `row ${item.human_override ? 'overridden' : ''}`;
+    tr.onclick = (e) => {
+      if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
+      toggleRow(item.col_id);
+    };
+
+    const confClass = item.confidence === 'high' ? 'conf-high' : (item.confidence === 'medium' ? 'conf-medium' : 'conf-low');
+    const isOverridden = !!item.human_override;
+
+    const isEditing = (state.editingOverride === item.col_id);
+
+    let roleCellHtml = '';
+    if (isEditing) {
+      roleCellHtml = `
+        <div class="inline-role-editor" onclick="event.stopPropagation()">
+          <input type="text"
+                 id="input-role-${item.col_id}"
+                 class="inline-role-input"
+                 value="${escapeAttr(item.role)}"
+                 placeholder="Type custom functional role..."
+                 onkeydown="handleOverrideKeyDown(event, '${item.col_id}')" />
+        </div>
+      `;
+    } else {
+      roleCellHtml = `
+        <div class="role-cell">
+          <span>${escapeHtml(item.role)}</span>
+          ${isOverridden ? `
+            <span class="override-tag" title="Custom override applied by operator">Overridden</span>
+            <button class="badge-btn" onclick="openInlineOverride('${item.col_id}', event)" title="Modify override (free text)">✎</button>
+            <button class="badge-btn" onclick="doCancelOverride('${item.col_id}', event)" title="Delete override & revert to inferred role">✕</button>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // ACTIONS COLUMN: Always keep Accept & Contest available!
+    let actionsHtml = `
+      <button class="btn-act btn-accept" onclick="doAccept('${item.col_id}', event)" title="Accept role">Accept</button>
+      <button class="btn-act btn-contest" onclick="doContest('${item.col_id}', event)" title="Contest role">Contest</button>
+    `;
+
+    if (isEditing) {
+      actionsHtml += `
+        <button class="btn-act btn-save-override" onclick="commitInlineOverride('${item.col_id}')" title="Save custom override">Save</button>
+        ${isOverridden ? `<button class="btn-act btn-delete-ov" onclick="doCancelOverride('${item.col_id}', event)" title="Delete override & revert to inferred role">Delete</button>` : ''}
+        <button class="btn-act btn-cancel-override" onclick="cancelInlineOverride('${item.col_id}')" title="Cancel editing">✕</button>
+      `;
+    } else if (isOverridden) {
+      // OVERRIDDEN CHANNEL: Operator can still Accept, Contest, Modify, or Delete override!
+      actionsHtml += `
+        <button class="btn-act btn-override" onclick="openInlineOverride('${item.col_id}', event)" title="Modify override (free text)">Modify</button>
+        <button class="btn-act btn-delete-ov" onclick="doCancelOverride('${item.col_id}', event)" title="Delete override & revert to inferred role">Delete override</button>
+      `;
+    } else {
+      // NORMAL CHANNEL: Green Accept, Orange Contest, Red Override (free text)
+      actionsHtml += `
+        <button class="btn-act btn-override" onclick="openInlineOverride('${item.col_id}', event)" title="Override role (free text)">Override</button>
+      `;
+    }
+
+    tr.innerHTML = `
+      <td class="mono col-id">${item.col_id}</td>
+      <td>${roleCellHtml}</td>
+      <td><span class="status-pill ${confClass}"><span class="dot"></span>${item.confidence}</span></td>
+      <td style="color:var(--text-muted);">${item.epistemic_status}</td>
+      <td>
+        <div class="actions">${actionsHtml}</div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+
+    // ACTION FEEDBACK DISPLAYED BELOW THE ROW (as requested)
+    const fb = state.feedbacks[item.col_id];
+    if (fb) {
+      const fbTr = document.createElement("tr");
+      fbTr.className = "feedback-subrow";
+      fbTr.innerHTML = `
+        <td colspan="5">
+          <div class="row-feedback-bar ${fb.type}">
+            <span>${fb.text}</span>
+            <button class="btn-dismiss-feedback" onclick="dismissFeedback('${item.col_id}')">✕</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(fbTr);
+    }
+
+    // Expandable mathematical evidence details
+    if (state.expanded.has(item.col_id)) {
+      const dTr = document.createElement("tr");
+      dTr.className = "detail-row";
+      
+      const cards = (item.evidence_ids || []).map(id => {
+        const ev = state.evidenceById[id];
+        if (!ev) return `<div class="evidence-item"><div class="evidence-title">${id}</div><div>Registered pipeline evidence</div></div>`;
+        const valStr = Object.entries(ev.value || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+        return `
+          <div class="evidence-item">
+            <div class="evidence-title">${ev.evidence_id} · ${ev.kind || 'moment'}</div>
+            <div class="mono" style="color:var(--text);">${valStr || 'computed'}</div>
+          </div>
+        `;
+      }).join("");
+
+      dTr.innerHTML = `
+        <td colspan="5">
+          <div class="detail-box">
+            ${item.reasoning ? `<div class="reasoning-text"><b>Derivation:</b> ${item.reasoning}</div>` : ''}
+            <div class="evidence-list">${cards}</div>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(dTr);
+    }
+  }
+}
+
+function toggleRow(id) {
+  if (state.expanded.has(id)) state.expanded.delete(id);
+  else state.expanded.add(id);
+  render();
+}
+
+function setFilter(f) {
+  state.activeFilter = f;
+  document.querySelectorAll(".filter-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.filter === f);
+  });
+  render();
+}
+
+function handleSearch() {
+  state.search = document.getElementById("search").value;
+  render();
 }
 
 async function postDecision(payload) {
   const res = await fetch("/api/decision", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(payload)
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
 
-function setFlash(colId, ok, text) {
-  uiFor(colId).flash = { ok, text };
-  renderRows();
-}
-
-async function doAccept(colId) {
-  const by = operatorName();
-  if (!by) return setFlash(colId, false, "enter an operator name first");
-  try {
-    await postDecision({ col_id: colId, action: "accept", by });
-    setFlash(colId, true, "accepted — logged");
-  } catch (err) {
-    setFlash(colId, false, err.message);
-  }
-}
-
-function openForm(colId, kind) {
-  uiFor(colId).formOpen = kind;
-  uiFor(colId).flash = null;
-  renderRows();
-}
-
-function closeForm(colId) {
-  uiFor(colId).formOpen = null;
-  renderRows();
-}
-
-async function submitContest(colId) {
-  const by = operatorName();
-  const rationale = document.getElementById(`contest-reason-${colId}`).value.trim();
-  if (!by) return setFlash(colId, false, "enter an operator name first");
-  if (!rationale) return setFlash(colId, false, "a reason is required to contest");
-  try {
-    await postDecision({ col_id: colId, action: "contest", by, rationale });
-    uiFor(colId).formOpen = null;
-    setFlash(colId, true, "contested — logged");
-  } catch (err) {
-    setFlash(colId, false, err.message);
-  }
-}
-
-async function submitOverride(colId) {
-  const by = operatorName();
-  const role = document.getElementById(`override-role-${colId}`).value.trim();
-  const rationale = document.getElementById(`override-reason-${colId}`).value.trim();
-  if (!by) return setFlash(colId, false, "enter an operator name first");
-  if (!role) return setFlash(colId, false, "the corrected role is required");
-  if (!rationale) return setFlash(colId, false, "a reason is required to override");
-  try {
-    const data = await postDecision({ col_id: colId, action: "override", by, role, rationale });
-    const idx = state.inferences.findIndex((i) => i.col_id === colId);
-    if (idx !== -1 && data.inference) state.inferences[idx] = data.inference;
-    uiFor(colId).formOpen = null;
-    setFlash(colId, true, "override recorded");
-  } catch (err) {
-    setFlash(colId, false, err.message);
-  }
-}
-
-async function loadJSON(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
-  return res.json();
-}
-
-// The pipeline stages and the original contract carry the same information in
-// different containers. Normalise both into one shape so the UI has a single
-// thing to render. Added 19 Sep during integration.
-function normaliseInferences(semantics) {
-  // Form A: { inferences: [ {col_id, role, confidence, ...} ] }
-  if (Array.isArray(semantics.inferences)) return semantics.inferences;
-
-  // Form B: { col_001: {inferred_role, confidence, evidence_ids, ...}, ... }
-  return Object.entries(semantics)
-    .filter(([k, v]) => /^col_/.test(k) && v && typeof v === "object")
-    .map(([col_id, v]) => ({
-      col_id,
-      role: v.role || v.inferred_role || "—",
-      confidence: (v.confidence || "").toLowerCase() || "—",
-      // Not every stage emits this yet; say so rather than showing blank.
-      epistemic_status: v.epistemic_status || "not stated",
-      evidence_ids: Array.isArray(v.evidence_ids)
-        ? v.evidence_ids
-        : Object.values(v.evidence_ids || {}),
-      reasoning: v.reasoning || v.debug_prompt_generated || "",
-      human_override: v.human_override || null,
-    }));
-}
-
-// Evidence can arrive as a top-level array, or as a flat list of evidence
-// objects (relations.json), or embedded per column (profiles.json).
-function collectEvidence(doc) {
-  if (!doc) return [];
-  if (Array.isArray(doc)) return doc.filter((e) => e && e.evidence_id);
-  if (Array.isArray(doc.evidence)) return doc.evidence;
-
-  const out = [];
-  for (const [col_id, v] of Object.entries(doc)) {
-    if (!/^col_/.test(col_id) || !v || typeof v !== "object") continue;
-    const stats = v.statistics || {};
-    const ids = Array.isArray(v.evidence_ids) ? {} : (v.evidence_ids || {});
-    for (const [kind, id] of Object.entries(ids)) {
-      out.push({
-        evidence_id: id,
-        kind,
-        subject: [col_id],
-        value: kind in stats ? { [kind]: stats[kind] } : stats,
-        method: "statistical_profiling",
-      });
+function setRowFeedback(colId, type, text) {
+  state.feedbacks[colId] = { type, text };
+  render();
+  setTimeout(() => {
+    if (state.feedbacks[colId] && state.feedbacks[colId].text === text) {
+      delete state.feedbacks[colId];
+      render();
     }
-  }
-  return out;
+  }, 4500);
 }
 
-function mergeEvidence(...arrays) {
-  const byId = {};
-  for (const arr of arrays) {
-    for (const ev of arr || []) byId[ev.evidence_id] = ev;
-  }
-  return byId;
+function dismissFeedback(colId) {
+  delete state.feedbacks[colId];
+  render();
 }
 
-function fmtValue(value) {
-  if (value == null) return "—";
-  return Object.entries(value)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join(", ");
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function fmtWindow(window) {
-  if (!window) return "—";
-  const parts = [];
-  if (window.run != null) parts.push(`run ${window.run}`);
-  if (window.from != null && window.to != null) parts.push(`[${window.from}, ${window.to}]`);
-  return parts.length ? parts.join(" ") : "—";
+function escapeAttr(str) {
+  if (!str) return '';
+  return String(str).replace(/"/g, '&quot;');
 }
 
-function renderEvidenceCard(evidenceId) {
-  const ev = state.evidenceById[evidenceId];
-  if (!ev) {
-    return `<div class="evidence-card missing">
-      <div class="evidence-field"><b>evidence_id</b> ${evidenceId}</div>
-      <div class="evidence-field">evidence not found in profiles.json or relations.json</div>
-    </div>`;
+// 1. Instant Accept (Always available, for normal and overridden channels)
+async function doAccept(colId, event) {
+  if (event) event.stopPropagation();
+  const by = getOperatorID();
+  const item = state.inferences.find(i => i.col_id === colId);
+  if (item) item.epistemic_status = "accepted";
+
+  const currentRole = item ? item.role : colId;
+  setRowFeedback(colId, 'green', `✓ Accepted: Role "${currentRole}" confirmed for ${colId} by ${by}`);
+  render();
+
+  try {
+    await postDecision({ col_id: colId, action: "accept", by, role: currentRole });
+  } catch(e) {
+    console.error("Accept error:", e);
   }
-  return `<div class="evidence-card">
-    <div class="evidence-field"><b>evidence_id</b> ${ev.evidence_id} (${ev.stage} / ${ev.kind})</div>
-    <div class="evidence-field"><b>method</b> ${ev.method}</div>
-    <div class="evidence-field"><b>value</b> ${fmtValue(ev.value)}</div>
-    <div class="evidence-field"><b>window</b> ${fmtWindow(ev.window)}</div>
-  </div>`;
 }
 
-function renderRoleCell(inf) {
-  if (!inf.human_override) return escapeHtml(inf.role);
-  return `${escapeHtml(inf.human_override.role)}` +
-    `<span class="role-original">${escapeHtml(inf.role)}</span>` +
-    `<span class="override-badge">HUMAN OVERRIDE</span>`;
+// 2. Instant Contest (Always available, for normal and overridden channels)
+async function doContest(colId, event) {
+  if (event) event.stopPropagation();
+  const by = getOperatorID();
+  const item = state.inferences.find(i => i.col_id === colId);
+  if (item) item.epistemic_status = "contested";
+
+  const currentRole = item ? item.role : colId;
+  setRowFeedback(colId, 'orange', `⚠ Contested: Role "${currentRole}" flagged for review on ${colId} by ${by}`);
+  render();
+
+  try {
+    await postDecision({ col_id: colId, action: "contest", by, role: currentRole, rationale: "Contested by operator" });
+  } catch(e) {
+    console.error("Contest error:", e);
+  }
 }
 
-function renderActionsCell(inf) {
-  const colId = inf.col_id;
-  const ui = uiFor(colId);
-  let html = `<div class="actions">
-    <button class="btn-accept" data-action="accept" data-col="${colId}">Accept</button>
-    <button class="btn-contest" data-action="open-contest" data-col="${colId}">Contest</button>
-    <button class="btn-override" data-action="open-override" data-col="${colId}">Override</button>
-  </div>`;
-
-  if (ui.formOpen === "contest") {
-    html += `<div class="inline-form">
-      <textarea id="contest-reason-${colId}" rows="2" placeholder="why do you contest this?"></textarea>
-      <button data-action="submit-contest" data-col="${colId}">Send</button>
-      <button data-action="cancel-form" data-col="${colId}">Cancel</button>
-    </div>`;
-  }
-
-  if (ui.formOpen === "override") {
-    const prefill = inf.human_override ? inf.human_override.role : inf.role;
-    html += `<div class="inline-form">
-      <input id="override-role-${colId}" type="text" value="${escapeHtml(prefill)}" placeholder="corrected role">
-      <textarea id="override-reason-${colId}" rows="2" placeholder="why?"></textarea>
-      <button data-action="submit-override" data-col="${colId}">Confirm override</button>
-      <button data-action="cancel-form" data-col="${colId}">Cancel</button>
-    </div>`;
-  }
-
-  if (inf.human_override) {
-    html += `<div class="override-meta">overridden by <b>${escapeHtml(inf.human_override.by)}</b> · ` +
-      `${escapeHtml(inf.human_override.at)}<br>&ldquo;${escapeHtml(inf.human_override.rationale)}&rdquo;</div>`;
-  }
-
-  if (ui.flash) {
-    html += `<div class="flash ${ui.flash.ok ? "ok" : "err"}">${escapeHtml(ui.flash.text)}</div>`;
-  }
-
-  return html;
+// 3. Open free-text inline override / modify
+function openInlineOverride(colId, event) {
+  if (event) event.stopPropagation();
+  state.editingOverride = colId;
+  render();
+  setTimeout(() => {
+    const input = document.getElementById(`input-role-${colId}`);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }, 25);
 }
 
-function renderRows() {
-  const tbody = document.getElementById("report-body");
-  tbody.innerHTML = "";
+function cancelInlineOverride(colId) {
+  state.editingOverride = null;
+  render();
+}
 
-  // An empty table used to look like a styling problem. Say what is wrong
-  // instead, so the next person does not spend an hour on it.
-  if (!state.inferences.length) {
-    tbody.innerHTML =
-      `<tr><td colspan="5" style="padding:1rem;color:#b00">` +
-      `No inferences to show. artifacts/semantics.json loaded but contained ` +
-      `neither an "inferences" array nor any col_NNN keys. ` +
-      `Run <code>make check</code>, then hard-reload this page ` +
-      `(Cmd+Shift+R) in case the browser cached an older build.` +
-      `</td></tr>`;
+function handleOverrideKeyDown(event, colId) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    commitInlineOverride(colId);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    cancelInlineOverride(colId);
+  }
+}
+
+// 4. Commit or Modify Override (Free writing, no list!)
+async function commitInlineOverride(colId) {
+  const input = document.getElementById(`input-role-${colId}`);
+  const newRole = input ? input.value.trim() : "";
+  const by = getOperatorID();
+
+  if (!newRole) {
+    if (input) {
+      input.focus();
+      input.placeholder = "Please enter a role name...";
+    }
     return;
   }
 
-  for (const inf of state.inferences) {
-    const row = document.createElement("tr");
-    row.className = "row" + (inf.human_override ? " overridden" : "");
-    row.dataset.col = inf.col_id;
-    row.innerHTML = `
-      <td>${inf.col_id}</td>
-      <td>${renderRoleCell(inf)}</td>
-      <td class="conf-${inf.confidence}">${inf.confidence}</td>
-      <td>${inf.epistemic_status}</td>
-      <td>${renderActionsCell(inf)}</td>
-    `;
-    tbody.appendChild(row);
+  state.editingOverride = null;
+  const item = state.inferences.find(i => i.col_id === colId);
+  const wasOverridden = item && !!item.human_override;
 
-    if (state.expanded.has(inf.col_id)) {
-      const detail = document.createElement("tr");
-      detail.className = "detail";
-      const ids = inf.evidence_ids || [];
-      const cards = ids.length
-        ? ids.map(renderEvidenceCard).join("")
-        : "<em>no evidence_ids on this inference</em>";
-      detail.innerHTML = `<td colspan="5">
-        <div><b>reasoning:</b> ${inf.reasoning || "—"}</div>
-        ${cards}
-      </td>`;
-      tbody.appendChild(detail);
-    }
+  if (item) {
+    item.role = newRole;
+    item.human_override = { role: newRole, by, at: new Date().toISOString() };
+    item.epistemic_status = "overridden";
+  }
+
+  const feedbackText = wasOverridden
+    ? `✎ Override modified: Role updated to "${newRole}" on ${colId} by ${by}`
+    : `✎ Overridden: Role updated to "${newRole}" on ${colId} by ${by}`;
+
+  setRowFeedback(colId, 'red', feedbackText);
+  updateStats();
+  render();
+
+  try {
+    await postDecision({
+      col_id: colId,
+      action: "override",
+      by,
+      role: newRole,
+      rationale: wasOverridden ? `Operator modified override to '${newRole}'` : `Overridden by operator to ${newRole}`
+    });
+  } catch(e) {
+    console.error("Override error:", e);
   }
 }
 
-function toggleRow(colId) {
-  if (state.expanded.has(colId)) state.expanded.delete(colId);
-  else state.expanded.add(colId);
-  renderRows();
+// 5. Delete / Revert Override (Restores original inferred role)
+async function doCancelOverride(colId, event) {
+  if (event) event.stopPropagation();
+  const by = getOperatorID();
+  const item = state.inferences.find(i => i.col_id === colId);
+  const revertedRole = (item && item.inferred_role) ? item.inferred_role : "Continuous process variable";
+
+  if (state.editingOverride === colId) {
+    state.editingOverride = null;
+  }
+
+  if (item) {
+    item.role = revertedRole;
+    item.human_override = null;
+    item.epistemic_status = "inferred";
+  }
+
+  setRowFeedback(colId, 'orange', `✕ Override deleted: Reverted ${colId} back to inferred role "${revertedRole}" by ${by}`);
+  updateStats();
+  render();
+
+  try {
+    await postDecision({
+      col_id: colId,
+      action: "cancel_override",
+      by
+    });
+  } catch(e) {
+    console.error("Cancel override error:", e);
+  }
 }
 
-function wireReportBody() {
-  document.getElementById("report-body").addEventListener("click", (e) => {
-    const actionEl = e.target.closest("[data-action]");
-    if (actionEl) {
-      e.stopPropagation();
-      const { action, col } = actionEl.dataset;
-      if (action === "accept") doAccept(col);
-      else if (action === "open-contest") openForm(col, "contest");
-      else if (action === "open-override") openForm(col, "override");
-      else if (action === "submit-contest") submitContest(col);
-      else if (action === "submit-override") submitOverride(col);
-      else if (action === "cancel-form") closeForm(col);
-      return;
-    }
-    if (e.target.closest(".inline-form")) return; // typing shouldn't toggle the row
-    const row = e.target.closest("tr.row");
-    if (row) toggleRow(row.dataset.col);
-  });
+function updateStats() {
+  const total = state.inferences.length;
+  const actuators = state.inferences.filter(i => i.role.toLowerCase().includes('valve') || i.role.toLowerCase().includes('actuator')).length;
+  const sensors = total - actuators;
+  const overrides = state.inferences.filter(i => !!itemHasOverride(i)).length;
+
+  document.getElementById("stat-total").textContent = total;
+  document.getElementById("stat-actuators").textContent = actuators;
+  document.getElementById("stat-sensors").textContent = sensors;
+  document.getElementById("stat-overrides").textContent = overrides;
+  document.getElementById("count-all").textContent = total;
+}
+
+function itemHasOverride(item) {
+  return item.human_override && typeof item.human_override === 'object' && item.human_override.role;
 }
 
 async function init() {
-  const errorEl = document.getElementById("error");
-  const nameInput = document.getElementById("operator-name");
-  nameInput.value = loadOperatorName();
-  nameInput.addEventListener("input", saveOperatorName);
-  wireReportBody();
+  initOperatorID();
 
   try {
-    const [semantics, profiles, relations] = await Promise.all([
-      loadJSON("../artifacts/semantics.json"),
-      loadJSON("../artifacts/profiles.json"),
-      loadJSON("../artifacts/relations.json"),
-    ]);
-    state.inferences = normaliseInferences(semantics);
+    let semanticsData, profilesData, relationsData;
+    try {
+      [semanticsData, profilesData, relationsData] = await Promise.all([
+        loadJSON("../artifacts/semantics.json"),
+        loadJSON("../artifacts/profiles.json"),
+        loadJSON("../artifacts/relations.json")
+      ]);
+    } catch(e) {
+      [semanticsData, profilesData, relationsData] = await Promise.all([
+        loadJSON("../artifacts/from_team/semantics.json"),
+        loadJSON("../artifacts/from_team/profiles.json"),
+        loadJSON("../artifacts/from_team/relations.json")
+      ]);
+    }
+
+    state.inferences = normaliseInferences(semanticsData);
     state.evidenceById = mergeEvidence(
-      collectEvidence(profiles),
-      collectEvidence(relations),
+      collectEvidence(profilesData),
+      collectEvidence(relationsData)
     );
-    renderRows();
-  } catch (err) {
-    errorEl.textContent =
-      "Could not load artifacts: " + err.message +
-      "\n\nThis page reads JSON files relative to ui/index.html, needs " +
-      "artifacts/semantics.json, profiles.json and relations.json to exist " +
-      "(run `make setup` if they don't), and the operator/override controls " +
-      "need the write endpoint the plain static server doesn't have. Serve " +
-      "this project with:\n" +
-      "  python3 ui/server.py\n" +
-      "then open http://localhost:8000/ui/";
+
+    updateStats();
+    render();
+
+    // Check gate status: just 'Trusted' or 'Untrusted'
+    try {
+      const dq = await loadJSON("../artifacts/dq_report.json").catch(() => loadJSON("../artifacts/from_team/dq_report.json"));
+      const gate = document.getElementById("gate-status");
+      const text = document.getElementById("gate-text");
+      if (dq && dq.trust_verdict === "UNTRUSTED") {
+        gate.className = "gate-indicator untrusted";
+        text.textContent = "Untrusted";
+      } else {
+        gate.className = "gate-indicator";
+        text.textContent = "Trusted";
+      }
+    } catch(e) {}
+
+  } catch(err) {
+    document.getElementById("table-body").innerHTML = `
+      <tr><td colspan="5" style="text-align:center; padding: 2rem; color: var(--red);">
+        Failed to load telemetry artifacts.
+      </td></tr>
+    `;
   }
 }
 

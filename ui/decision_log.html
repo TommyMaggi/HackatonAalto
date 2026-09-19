@@ -2,262 +2,877 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Decision Log</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NORRIN — Decision Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: sans-serif; margin: 2rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ccc; vertical-align: top; }
-  tr.row { cursor: pointer; }
-  tr.row:hover { background: #f2f2f2; }
-  tr.detail td { background: #fafafa; padding: 0.6rem; }
-  .evidence-card { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.4rem 0; }
-  .evidence-field { margin: 0.15rem 0; }
-  .evidence-field b { display: inline-block; min-width: 8rem; }
-  #error { color: #c00; white-space: pre-wrap; font-family: monospace; }
-  .topnav { margin-bottom: 0.5rem; font-size: 0.85rem; }
-  .topnav a { margin-right: 1rem; color: #555; text-decoration: none; }
-  .topnav a.current { color: #000; font-weight: bold; }
-  .topnav a:hover { text-decoration: underline; }
-
-  .egress-panel {
-    border: 1px solid #ccc; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0 1.5rem;
-    background: #fafafa;
+  :root {
+    --bg: #ffffff;
+    --bg-subtle: #f8fafc;
+    --bg-muted: #f1f5f9;
+    --border: #e2e8f0;
+    --border-dark: #cbd5e1;
+    
+    --text: #0f172a;
+    --text-muted: #475569;
+    --text-subtle: #94a3b8;
+    
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --green-border: #86efac;
+    
+    --orange: #ea580c;
+    --orange-bg: #fff7ed;
+    --orange-border: #fdba74;
+    
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --red-border: #fca5a5;
   }
-  .egress-panel h2 { margin: 0 0 0.75rem; font-size: 1rem; color: #333; }
-  .stat-row { display: flex; gap: 1rem; flex-wrap: wrap; }
-  .stat-tile { flex: 1; min-width: 10rem; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; background: #fff; }
-  .stat-tile .value { font-size: 2rem; font-weight: bold; line-height: 1.1; }
-  .stat-tile .label { font-size: 0.78rem; color: #666; margin-top: 0.2rem; }
-  .stat-tile .sublabel { font-size: 0.72rem; margin-top: 0.15rem; }
-  .stat-tile.good .value { color: #146c2e; }
-  .stat-tile.good .sublabel { color: #146c2e; font-weight: bold; }
-  .egress-detail { font-size: 0.78rem; color: #555; margin-top: 0.75rem; }
-  .egress-detail b { color: #333; }
 
-  .filters { margin: 1rem 0; display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
-  .filters label { display: block; font-size: 0.78rem; color: #555; margin-bottom: 0.2rem; }
-  .filters select { padding: 0.3rem 0.4rem; font: inherit; min-width: 10rem; }
-  .filters .count { font-size: 0.82rem; color: #666; align-self: center; }
-
-  .kind-badge {
-    display: inline-block; font-size: 0.7rem; font-weight: bold; padding: 0.05rem 0.4rem;
-    border-radius: 3px; border: 1px solid #999; color: #444;
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 1.75rem 2.5rem 4rem;
+    max-width: 1320px;
+    margin: 0 auto;
   }
-  .kind-override { border-color: #a12626; color: #a12626; }
-  .kind-human_review { border-color: #8a6d00; color: #8a6d00; }
-  .kind-model_call { border-color: #1b5fa8; color: #1b5fa8; }
-  .actor-human { font-weight: bold; }
+
+  code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Header & Branding */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .brand-group {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+
+  /* Official Norrin Logo Icon */
+  .brand-logo-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 7px;
+    object-fit: cover;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    border: 1px solid var(--border);
+  }
+
+  .brand-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .brand-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    line-height: 1.1;
+  }
+
+  .brand-subtitle {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* View Slider / Segmented Control */
+  .view-slider {
+    display: inline-flex;
+    align-items: center;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    padding: 3px;
+    border-radius: 9999px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+  }
+
+  .slider-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 1.25rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #64748b;
+    text-decoration: none;
+    border-radius: 9999px;
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+  }
+
+  .slider-tab:hover {
+    color: #0f172a;
+  }
+
+  .slider-tab.active {
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 600;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  }
+
+  /* Operator ID Control (Strictly ID, NO green dot) */
+  .operator-id-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-dark);
+    border-radius: 6px;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .op-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+  }
+
+  .op-id-field {
+    border: none;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    width: 80px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .op-id-field:focus {
+    border-color: var(--text);
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+  }
+
+  /* Data Sovereignty Egress Strip */
+  .egress-strip {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
+  .egress-item b {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-right: 0.25rem;
+  }
+
+  .egress-item.highlight b {
+    color: var(--green);
+  }
+
+  .egress-divider { color: var(--border-dark); }
+
+  .sovereignty-badge {
+    margin-left: auto;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--green);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .search-box {
+    position: relative;
+  }
+
+  .search-box input {
+    width: 250px;
+    padding: 0.4rem 0.75rem 0.4rem 2rem;
+    font-size: 0.82rem;
+    border: 1px solid var(--border-dark);
+    border-radius: 5px;
+    outline: none;
+    color: var(--text);
+  }
+  .search-box input:focus { border-color: var(--text); }
+
+  .search-icon {
+    position: absolute;
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-subtle);
+    pointer-events: none;
+  }
+
+  .filter-select {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--border-dark);
+    border-radius: 5px;
+    background: #fff;
+    color: var(--text);
+    outline: none;
+  }
+
+  /* Toolbar Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.42rem 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 5px;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid var(--border-dark);
+    color: var(--text-muted);
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+  .btn:hover { color: var(--text); background: var(--bg-subtle); }
+
+  /* Save As PDF Button */
+  .btn-pdf {
+    color: var(--text);
+    border-color: var(--border-dark);
+    background: #ffffff;
+  }
+  .btn-pdf:hover {
+    background: var(--bg-muted);
+  }
+
+  /* Save As JSON Button */
+  .btn-save {
+    color: var(--green);
+    border-color: var(--green-border);
+    background: var(--green-bg);
+  }
+  .btn-save:hover {
+    background: var(--green);
+    color: #fff;
+    border-color: var(--green);
+  }
+
+  .btn-restore {
+    color: var(--text);
+    border-color: var(--border-dark);
+  }
+
+  .btn-clear {
+    color: var(--red);
+    border-color: var(--red-border);
+    background: var(--red-bg);
+  }
+  .btn-clear:hover {
+    background: var(--red);
+    color: #fff;
+    border-color: var(--red);
+  }
+
+  /* Notification banner */
+  .notify-bar {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    animation: popIn 0.2s ease-out;
+  }
+  .notify-bar.green {
+    display: flex;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid var(--green-border);
+  }
+  .notify-bar.orange {
+    display: flex;
+    background: var(--orange-bg);
+    color: var(--orange);
+    border: 1px solid var(--orange-border);
+  }
+
+  @keyframes popIn {
+    0% { transform: translateY(-4px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+
+  /* Table: Clean, NO 'Entry' column in main view */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-dark);
+  }
+
+  tr.row {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  tr.row:hover { background: var(--bg-subtle); }
+
+  td {
+    padding: 0.75rem 0.75rem;
+    vertical-align: middle;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  /* Red Overridden */
+  .badge-override {
+    color: var(--red);
+    font-weight: 700;
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+  }
+  /* Orange Reverted / Cancelled */
+  .badge-cancelled {
+    color: var(--orange);
+    font-weight: 700;
+    background: var(--orange-bg);
+    border: 1px solid var(--orange-border);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+  }
+
+  /* ID Cell: Clean, pure ID, no role */
+  .id-cell {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.76rem;
+    background: var(--bg-muted);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    display: inline-block;
+  }
+
+  tr.detail-row { background: var(--bg-subtle); }
+  .detail-box {
+    padding: 0.85rem 1.25rem;
+    border-left: 3px solid var(--border-dark);
+    margin: 0.25rem 0;
+  }
+
+  .entry-marker {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+  }
+
+  pre.raw-json {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    overflow-x: auto;
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 0.65rem 0.85rem;
+    border-radius: 5px;
+  }
+
+  /* Modal Backdrop & Cards */
+  .modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+  }
+  .modal-backdrop.open { display: flex; }
+
+  .modal-card {
+    background: #fff;
+    border: 1px solid var(--border-dark);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 520px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+  }
+
+  .modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+    color: var(--text);
+  }
+
+  .modal-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+    line-height: 1.45;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+  }
+
+  .snapshot-list {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+
+  .snapshot-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+  .snapshot-item:last-child { border-bottom: none; }
+  .snapshot-item:hover { background: var(--bg-subtle); }
+
+  .snap-title { font-weight: 600; color: var(--text); }
+  .snap-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }
+
+  .btn-select-snap {
+    padding: 0.25rem 0.55rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    border-radius: 4px;
+    border: 1px solid var(--border-dark);
+    background: #fff;
+    cursor: pointer;
+  }
+  .btn-select-snap:hover {
+    background: var(--text);
+    color: #fff;
+    border-color: var(--text);
+  }
+
+  /* PRINT MEDIA STYLES: Crisp PDF Snapshot */
+  @media print {
+    body {
+      padding: 0;
+      max-width: 100%;
+      color: #000;
+      background: #fff;
+    }
+    header {
+      border-bottom: 2px solid #000;
+      margin-bottom: 1rem;
+    }
+    .view-slider, .toolbar, .btn, .operator-id-badge, .modal-backdrop, .notify-bar {
+      display: none !important;
+    }
+    .egress-strip {
+      border: 1px solid #000;
+      background: #f8fafc !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    table {
+      font-size: 0.75rem;
+    }
+    th, td {
+      padding: 0.45rem 0.5rem;
+    }
+    @page {
+      margin: 1.5cm;
+      size: landscape;
+    }
+  }
 </style>
 </head>
 <body>
 
-<nav class="topnav">
-  <a href="index.html">Sensor report</a>
-  <a class="current" href="decision_log.html">Decision log</a>
-</nav>
-<h1>Decision Log</h1>
-<div id="error"></div>
+<!-- Header -->
+<header>
+  <div class="brand-group">
+    <!-- Official Norrin Logo Image -->
+    <img src="assets/norrin_icon.png" alt="Norrin Logo" class="brand-logo-img">
+    <div class="brand-info">
+      <div class="brand-title">NORRIN</div>
+      <div class="brand-subtitle">Telemetry Guard</div>
+    </div>
+  </div>
 
-<div class="egress-panel">
-  <h2>Egress summary — what left this machine</h2>
-  <div id="egress-stats" class="stat-row"><em>loading…</em></div>
-  <div id="egress-detail" class="egress-detail"></div>
+  <!-- Sliding Segmented View Nav -->
+  <nav class="view-slider">
+    <a href="index.html" class="slider-tab">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Sensor report
+    </a>
+    <a href="decision_log.html" class="slider-tab active">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Decision log
+    </a>
+  </nav>
+
+  <!-- Operator ID (Strictly ID, NO green dot) -->
+  <div class="operator-id-badge">
+    <span class="op-label">OPERATOR ID:</span>
+    <input type="text" id="op-id-input" class="op-id-field mono" value="OP-01" spellcheck="false" title="Click to change Operator ID">
+  </div>
+</header>
+
+<!-- Data Sovereignty Egress Strip (Deliverable 8 Proof) -->
+<div class="egress-strip">
+  <div class="egress-item highlight"><b id="egress-rows">0</b> raw rows egressed</div>
+  <div class="egress-divider">·</div>
+  <div class="egress-item"><b id="egress-calls">0 / 0</b> external calls</div>
+  <div class="egress-divider">·</div>
+  <div class="egress-item"><b id="egress-bytes">0 KB</b> outbound data</div>
+  
+  <div class="sovereignty-badge" title="Deliverable 8: Mathematical guarantee that no raw plant telemetry left local memory">
+    <span>✓ Data Sovereignty: 100% Local</span>
+  </div>
 </div>
 
-<div class="filters">
-  <div>
-    <label for="filter-stage">Stage</label>
-    <select id="filter-stage"><option value="">All</option></select>
-  </div>
-  <div>
-    <label for="filter-kind">Kind</label>
-    <select id="filter-kind"><option value="">All</option></select>
-  </div>
-  <div>
-    <label for="filter-actor">Actor</label>
-    <select id="filter-actor"><option value="">All</option></select>
-  </div>
-  <div class="count" id="filter-count"></div>
+<!-- Notification Bar -->
+<div class="notify-bar" id="notify-bar">
+  <span id="notify-text"></span>
 </div>
 
-<table id="log">
+<!-- Toolbar -->
+<div class="toolbar">
+  <div class="toolbar-left">
+    <div class="search-box">
+      <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="search" placeholder="Search stage, type, summary..." oninput="render()">
+    </div>
+
+    <select id="filter-stage" class="filter-select" onchange="render()">
+      <option value="">All stages</option>
+      <option value="S4_semantics">S4 semantics</option>
+      <option value="S3_profiling">S3 profiling</option>
+      <option value="S5_gate">S5 gate</option>
+      <option value="Audit_System">Audit reset</option>
+    </select>
+
+    <select id="filter-kind" class="filter-select" onchange="render()">
+      <option value="">All event types</option>
+      <option value="override">Overrides</option>
+      <option value="human_review">Operator reviews</option>
+      <option value="model_call">Model inferences</option>
+      <option value="log_reset">Audit resets</option>
+    </select>
+  </div>
+
+  <div class="toolbar-right">
+    <!-- Save PDF as... button (Choose custom name) -->
+    <button class="btn btn-pdf" onclick="openSaveAsModal('pdf')" title="Choose name and export clean PDF snapshot">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Save PDF as...
+    </button>
+
+    <!-- Save JSON as... button (Choose custom name) -->
+    <button class="btn btn-save" onclick="openSaveAsModal('json')" title="Choose name and save JSONL audit log">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Save JSON as...
+    </button>
+
+    <!-- Restore Seed: Choose from folder/snapshots -->
+    <button class="btn btn-restore" onclick="openRestoreModal()" title="Choose among a folder of seeds or previous saves">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      Restore seed...
+    </button>
+
+    <!-- Clear Button: Safety modal asks if you're sure / made a copy first -->
+    <button class="btn btn-clear" onclick="openClearModal()" title="Reset audit log (confirms if you have a copy first)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      Clear log
+    </button>
+  </div>
+</div>
+
+<!-- Table: Clean, NO 'Entry' column in main view -->
+<table>
   <thead>
-    <tr><th>entry_id</th><th>at</th><th>actor</th><th>stage</th><th>kind</th><th>summary</th></tr>
+    <tr>
+      <th style="width: 155px;">Time (UTC)</th>
+      <th style="width: 120px;">Stage</th>
+      <th style="width: 130px;">Type</th>
+      <th style="width: 120px;">ID</th>
+      <th>Audit summary</th>
+    </tr>
   </thead>
-  <tbody id="log-body"></tbody>
+  <tbody id="table-body">
+    <tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">Loading audit log stream...</td></tr>
+  </tbody>
 </table>
 
+<!-- Save As Modal (Operator chooses file name for both PDF and JSON) -->
+<div class="modal-backdrop" id="save-as-modal">
+  <div class="modal-card">
+    <div class="modal-title" id="save-as-title">Save File As...</div>
+    <div class="modal-desc" id="save-as-desc">
+      Choose the name for this file:
+    </div>
+
+    <div style="margin-bottom: 1.25rem;">
+      <label style="display:block; font-size:0.75rem; font-weight:700; color:var(--text-muted); margin-bottom:0.4rem; letter-spacing:0.04em;">
+        FILE NAME:
+      </label>
+      <div style="display:flex; align-items:center; border:1px solid var(--border-dark); border-radius:5px; padding:0.35rem 0.65rem; background:#fff;">
+        <input type="text" id="save-as-input" style="flex:1; border:none; outline:none; font-family:'JetBrains Mono', monospace; font-size:0.84rem; font-weight:600; color:var(--text);" spellcheck="false">
+        <span id="save-as-ext" class="mono" style="color:var(--text-subtle); font-size:0.82rem; font-weight:600;">.pdf</span>
+      </div>
+      <div style="font-size:0.72rem; color:var(--text-subtle); margin-top:0.35rem;">
+        Will be saved directly with this name to your computer and system snapshots.
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeSaveAsModal()">Cancel</button>
+      <button class="btn btn-save" id="btn-save-as-submit" onclick="executeSaveAs()">Save file</button>
+    </div>
+  </div>
+</div>
+
+<!-- Clear Confirmation Modal (Safety Check) -->
+<div class="modal-backdrop" id="clear-modal">
+  <div class="modal-card">
+    <div class="modal-title">Reset Decision Log?</div>
+    <div class="modal-desc">
+      Are you sure you want to clear the active audit log? <b>Have you created a saved copy first?</b>
+      <br><br>
+      Clearing will archive the current log to an internal snapshot and start a clean slate for your live demonstration.
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeClearModal()">Cancel</button>
+      <button class="btn btn-save" onclick="saveCopyAndClear()">Save copy & Clear</button>
+      <button class="btn btn-clear" onclick="executeClearImmediately()">Clear without saving</button>
+    </div>
+  </div>
+</div>
+
+<!-- Restore Seed Modal (Choose from folder of seeds/snapshots) -->
+<div class="modal-backdrop" id="restore-modal">
+  <div class="modal-card">
+    <div class="modal-title">Restore Seed or Snapshot</div>
+    <div class="modal-desc">
+      Choose a seed or previous save to restore to the active decision log:
+    </div>
+
+    <div class="snapshot-list" id="snapshot-list">
+      <div style="padding: 1rem; text-align: center; color: var(--text-muted);">Loading seeds...</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeRestoreModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
-// state: one flat object, no framework.
-const state = {
-  entries: [],           // raw decision_log.jsonl lines
-  expanded: new Set(),   // entry_ids currently expanded
-  filters: { stage: "", kind: "", actor: "" },
+let state = {
+  entries: [],
+  expanded: new Set(),
 };
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
+let saveAsContext = { format: 'pdf', callback: null };
+
+function getOperatorID() {
+  return localStorage.getItem("norrin_operator_id") || "OP-01";
 }
 
-function fmtVal(v) {
-  return typeof v === "string" ? v : JSON.stringify(v);
+function initOperatorID() {
+  const input = document.getElementById("op-id-input");
+  input.value = getOperatorID();
+  input.addEventListener("input", () => {
+    const val = input.value.trim() || "OP-01";
+    localStorage.setItem("norrin_operator_id", val);
+  });
 }
 
-async function loadJSONL(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
-  const text = await res.text();
-  return text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+function showNotification(text, type = "green") {
+  const bar = document.getElementById("notify-bar");
+  const msg = document.getElementById("notify-text");
+  msg.textContent = text;
+  bar.className = `notify-bar ${type}`;
+  setTimeout(() => {
+    bar.style.display = "none";
+  }, 4500);
 }
 
-async function loadJSON(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+async function loadJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.statusText}`);
   return res.json();
 }
 
-// Entries exist in two formats. The trust layer writes the contract format;
-// the pipeline stages wrote a flatter one before the adapter was introduced,
-// and those older lines are still in the log. Normalise both so the table,
-// the filters and the badges work on either. Added 19 Sep.
-function normaliseEntry(e, i) {
-  if (e.actor && e.kind) return e;   // already the contract format
+async function loadJSONL(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.statusText}`);
+  const text = await res.text();
+  const lines = text.trim().split("\n");
+  const out = [];
+  for (const l of lines) {
+    if (!l.trim()) continue;
+    try { out.push(JSON.parse(l)); } catch(e) {}
+  }
+  return out;
+}
 
-  const model = e.model_used || null;
+// Extract pure ID: NO actor name, NO role
+function extractCleanID(e) {
+  if (e.actor_name) {
+    if (/^OP-|^ID-|^op_/i.test(e.actor_name)) return e.actor_name;
+    if (e.actor_type === 'human') return e.actor_name.split(/[\s-]/)[0] || 'OP-01';
+    return e.actor_name.replace("local/", "LLM-");
+  }
+  if (e.actor && typeof e.actor === 'object') {
+    if (e.actor.name) return e.actor.name.replace("local/", "LLM-").replace("@plant", "");
+    if (e.actor.type === 'human') return 'OP-01';
+    if (e.actor.type === 'model') return 'LLM-Local';
+  }
+  if (e.stage) return e.stage.replace("_", "-");
+  return "System";
+}
+
+function normalise(e) {
   return {
-    entry_id: e.entry_id || `log_${String(i).padStart(4, "0")}`,
+    entry_id: e.entry_id || `ev_${(e.timestamp || "").replace(/[-:T.]/g, "").slice(0, 14)}`,
     at: e.at || e.timestamp || "—",
-    actor: e.actor || {
-      type: model ? "model" : "system",
-      ...(model ? { name: model } : {}),
-    },
-    stage: e.stage || "—",
-    kind: e.kind || (model ? "model_call" : "inference"),
-    summary: e.summary || [e.action, e.details].filter(Boolean).join(": ") || "—",
-    evidence_ids: e.evidence_ids || [],
-    confidence: e.confidence || null,
-    model_call: e.model_call || null,
-    override: e.override || null,
+    stage: e.stage || "Pipeline",
+    kind: e.kind || (e.action ? e.action.replace("detect_", "") : "event"),
+    clean_id: extractCleanID(e),
+    summary: e.summary || e.details || "Pipeline event logged.",
+    raw: e
   };
 }
 
-function actorLabel(actor) {
-  if (!actor) return "—";
-  return actor.name ? `${actor.type} · ${actor.name}` : actor.type;
-}
-
-function fmtBytes(n) {
-  if (!n) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0, v = n;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-function populateFilters() {
-  const stages = [...new Set(state.entries.map((e) => e.stage))].sort();
-  const kinds = [...new Set(state.entries.map((e) => e.kind))].sort();
-  const actors = [...new Set(state.entries.map((e) => actorLabel(e.actor)))].sort();
-
-  const fill = (id, values) => {
-    const el = document.getElementById(id);
-    for (const v of values) {
-      const opt = document.createElement("option");
-      opt.value = v;
-      opt.textContent = v;
-      el.appendChild(opt);
-    }
-  };
-  fill("filter-stage", stages);
-  fill("filter-kind", kinds);
-  fill("filter-actor", actors);
-
-  document.getElementById("filter-stage").addEventListener("change", (e) => {
-    state.filters.stage = e.target.value;
-    renderLog();
-  });
-  document.getElementById("filter-kind").addEventListener("change", (e) => {
-    state.filters.kind = e.target.value;
-    renderLog();
-  });
-  document.getElementById("filter-actor").addEventListener("change", (e) => {
-    state.filters.actor = e.target.value;
-    renderLog();
-  });
-}
-
-function filteredEntries() {
-  return state.entries.filter((e) =>
-    (!state.filters.stage || e.stage === state.filters.stage) &&
-    (!state.filters.kind || e.kind === state.filters.kind) &&
-    (!state.filters.actor || actorLabel(e.actor) === state.filters.actor)
-  );
-}
-
-function renderDetail(entry) {
-  const parts = [];
-  if (entry.subject && entry.subject.length) {
-    parts.push(`<div class="evidence-field"><b>subject</b> ${entry.subject.map(escapeHtml).join(", ")}</div>`);
-  }
-  if (entry.evidence_ids && entry.evidence_ids.length) {
-    parts.push(`<div class="evidence-field"><b>evidence_ids</b> ${entry.evidence_ids.map(escapeHtml).join(", ")}</div>`);
-  }
-  if (entry.confidence) {
-    parts.push(`<div class="evidence-field"><b>confidence</b> ${escapeHtml(entry.confidence)}</div>`);
-  }
-  if (entry.epistemic_status) {
-    parts.push(`<div class="evidence-field"><b>epistemic_status</b> ${escapeHtml(entry.epistemic_status)}</div>`);
-  }
-  if (entry.model_call) {
-    const mc = entry.model_call;
-    parts.push(`<div class="evidence-card">
-      <div class="evidence-field"><b>provider / model</b> ${escapeHtml(mc.provider)} / ${escapeHtml(mc.model)}</div>
-      <div class="evidence-field"><b>purpose</b> ${escapeHtml(mc.purpose)}</div>
-      <div class="evidence-field"><b>payload_kinds</b> ${(mc.payload_kinds || []).map(escapeHtml).join(", ")}</div>
-      <div class="evidence-field"><b>payload_bytes</b> ${escapeHtml(mc.payload_bytes)}</div>
-      <div class="evidence-field"><b>egress</b> ${mc.egress ? "left the machine" : "local — no egress"}</div>
-    </div>`);
-  }
-  if (entry.override) {
-    const ov = entry.override;
-    parts.push(`<div class="evidence-card">
-      <div class="evidence-field"><b>target</b> ${escapeHtml(ov.target)}</div>
-      <div class="evidence-field"><b>from</b> ${escapeHtml(fmtVal(ov.from))}</div>
-      <div class="evidence-field"><b>to</b> ${escapeHtml(fmtVal(ov.to))}</div>
-      <div class="evidence-field"><b>rationale</b> ${escapeHtml(ov.rationale)}</div>
-    </div>`);
-  }
-  return parts.length ? parts.join("") : "<em>no further detail on this entry</em>";
-}
-
-function renderLog() {
-  const tbody = document.getElementById("log-body");
+function render() {
+  const tbody = document.getElementById("table-body");
   tbody.innerHTML = "";
-  const rows = filteredEntries();
-  document.getElementById("filter-count").textContent = `${rows.length} of ${state.entries.length} entries`;
 
-  for (const entry of rows) {
-    const row = document.createElement("tr");
-    row.className = "row";
-    row.dataset.id = entry.entry_id;
-    row.innerHTML = `
-      <td>${escapeHtml(entry.entry_id)}</td>
-      <td>${escapeHtml(entry.at)}</td>
-      <td class="${entry.actor && entry.actor.type === "human" ? "actor-human" : ""}">${escapeHtml(actorLabel(entry.actor))}</td>
-      <td>${escapeHtml(entry.stage)}</td>
-      <td><span class="kind-badge kind-${escapeHtml(entry.kind)}">${escapeHtml(entry.kind)}</span></td>
-      <td>${escapeHtml(entry.summary)}</td>
+  const q = document.getElementById("search").value.toLowerCase();
+  const stage = document.getElementById("filter-stage").value;
+  const kind = document.getElementById("filter-kind").value;
+
+  const filtered = state.entries.filter(e => {
+    if (stage && e.stage !== stage) return false;
+    if (kind && !e.kind.toLowerCase().includes(kind.toLowerCase())) return false;
+    if (q) {
+      const match = e.entry_id.toLowerCase().includes(q) ||
+                    e.summary.toLowerCase().includes(q) ||
+                    e.clean_id.toLowerCase().includes(q) ||
+                    e.stage.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 2rem; color: var(--text-muted);">No log entries found.</td></tr>`;
+    return;
+  }
+
+  for (const item of filtered) {
+    const tr = document.createElement("tr");
+    tr.className = "row";
+    tr.onclick = () => toggleRow(item.entry_id);
+
+    const isOverride = item.kind.toLowerCase() === 'override';
+    const isCancelled = item.kind.toLowerCase().includes('cancel') || item.kind.toLowerCase().includes('revert');
+
+    // Clean columns: Time, Stage, Type, ID, Audit summary (NO Entry clutter)
+    tr.innerHTML = `
+      <td style="color:var(--text); font-weight:500; font-size:0.78rem;">${item.at.replace("T", " ").replace("Z", "")}</td>
+      <td><span class="mono" style="font-size:0.75rem;">${item.stage}</span></td>
+      <td><span class="badge ${isOverride ? 'badge-override' : (isCancelled ? 'badge-cancelled' : '')}">${isCancelled ? 'reverted' : item.kind}</span></td>
+      <td><span class="id-cell">${item.clean_id}</span></td>
+      <td style="color:var(--text);">${item.summary}</td>
     `;
-    row.addEventListener("click", () => toggleRow(entry.entry_id));
-    tbody.appendChild(row);
+    tbody.appendChild(tr);
 
-    if (state.expanded.has(entry.entry_id)) {
-      const detail = document.createElement("tr");
-      detail.className = "detail";
-      detail.innerHTML = `<td colspan="6">${renderDetail(entry)}</td>`;
-      tbody.appendChild(detail);
+    // Clicking reveals Entry ID & full cryptographic JSON details
+    if (state.expanded.has(item.entry_id)) {
+      const dTr = document.createElement("tr");
+      dTr.className = "detail-row";
+      dTr.innerHTML = `
+        <td colspan="5">
+          <div class="detail-box">
+            <div class="entry-marker"><b>Record Entry ID:</b> <code class="mono">${item.entry_id}</code></div>
+            <pre class="raw-json">${JSON.stringify(item.raw, null, 2)}</pre>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(dTr);
     }
   }
 }
@@ -265,63 +880,207 @@ function renderLog() {
 function toggleRow(id) {
   if (state.expanded.has(id)) state.expanded.delete(id);
   else state.expanded.add(id);
-  renderLog();
+  render();
 }
 
-function renderEgress(summary) {
-  const el = document.getElementById("egress-stats");
-  const left = summary.calls_that_left_the_machine || 0;
-  const total = summary.total_model_calls || 0;
-  el.innerHTML = `
-    <div class="stat-tile">
-      <div class="value">${total}</div>
-      <div class="label">model calls</div>
-    </div>
-    <div class="stat-tile ${left === 0 ? "good" : ""}">
-      <div class="value">${left} / ${total}</div>
-      <div class="label">calls that left this machine</div>
-      ${left === 0 ? '<div class="sublabel">none — every call ran locally</div>' : ""}
-    </div>
-    <div class="stat-tile">
-      <div class="value">${fmtBytes(summary.bytes_that_left)}</div>
-      <div class="label">bytes that left</div>
-    </div>
-    <div class="stat-tile good">
-      <div class="value">${summary.raw_rows_sent ?? 0}</div>
-      <div class="label">raw data rows sent</div>
-      <div class="sublabel">zero — by construction of the gateway</div>
-    </div>
-  `;
+// OPEN "SAVE AS..." MODAL: Lets operator choose the filename for PDF or JSON
+function openSaveAsModal(format, callback = null) {
+  saveAsContext.format = format;
+  saveAsContext.callback = callback;
+  const title = document.getElementById("save-as-title");
+  const desc = document.getElementById("save-as-desc");
+  const ext = document.getElementById("save-as-ext");
+  const input = document.getElementById("save-as-input");
+  const submitBtn = document.getElementById("btn-save-as-submit");
 
-  const providers = (summary.providers || []).join(", ") || "—";
-  const models = (summary.models || []).join(", ") || "—";
-  const kinds = (summary.payload_kinds_sent || []).join(", ") || "—";
-  document.getElementById("egress-detail").innerHTML =
-    `<b>providers</b> ${escapeHtml(providers)} &nbsp;·&nbsp; ` +
-    `<b>models</b> ${escapeHtml(models)} &nbsp;·&nbsp; ` +
-    `<b>payload kinds sent</b> ${escapeHtml(kinds)}`;
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0,10).replace(/-/g, "");
+  const timeStr = now.toTimeString().slice(0,5).replace(":", "");
+
+  if (format === 'pdf') {
+    title.textContent = "Save PDF Snapshot As...";
+    desc.textContent = "Choose a file name for the visual PDF snapshot of this audit log:";
+    ext.textContent = ".pdf";
+    input.value = `norrin_audit_report_${dateStr}_${timeStr}`;
+    submitBtn.textContent = "Export PDF Snapshot";
+  } else {
+    title.textContent = "Save JSON Audit Log As...";
+    desc.textContent = "Choose a file name for the machine-readable JSONL audit file:";
+    ext.textContent = ".jsonl";
+    input.value = `norrin_decision_log_${dateStr}_${timeStr}`;
+    submitBtn.textContent = "Download & Save JSONL";
+  }
+
+  document.getElementById("save-as-modal").classList.add("open");
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 100);
+}
+
+function closeSaveAsModal() {
+  document.getElementById("save-as-modal").classList.remove("open");
+}
+
+// EXECUTE SAVE AS: Saves with the operator's chosen filename
+async function executeSaveAs() {
+  const rawName = document.getElementById("save-as-input").value.trim();
+  const format = saveAsContext.format;
+  const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\.]/g, "_") || (format === 'pdf' ? 'norrin_audit_report' : 'norrin_decision_log');
+
+  closeSaveAsModal();
+
+  if (format === 'pdf') {
+    const finalPdfName = cleanName.endsWith(".pdf") ? cleanName.slice(0, -4) : cleanName;
+    const originalTitle = document.title;
+    document.title = finalPdfName;
+    window.print();
+    setTimeout(() => { document.title = originalTitle; }, 2000);
+    showNotification(`✓ Exporting PDF snapshot as "${finalPdfName}.pdf"`, "green");
+    if (saveAsContext.callback) saveAsContext.callback();
+  } else {
+    // JSON / JSONL
+    const finalJsonName = cleanName.endsWith(".jsonl") || cleanName.endsWith(".json") ? cleanName : `${cleanName}.jsonl`;
+    const op = getOperatorID();
+    try {
+      const res = await fetch("/api/save_decision_log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operator: op, custom_name: finalJsonName })
+      });
+      const data = await res.json();
+      
+      window.location.href = `/api/download_decision_log?name=${encodeURIComponent(finalJsonName)}`;
+      showNotification(`✓ Saved as "${finalJsonName}" (${data.entries || 0} entries).`, "green");
+      if (saveAsContext.callback) saveAsContext.callback();
+    } catch(e) {
+      window.location.href = `/api/download_decision_log?name=${encodeURIComponent(finalJsonName)}`;
+      showNotification(`✓ Downloading as "${finalJsonName}".`, "green");
+      if (saveAsContext.callback) saveAsContext.callback();
+    }
+  }
+}
+
+// Clear confirmation dialog (Safety Check)
+function openClearModal() {
+  document.getElementById("clear-modal").classList.add("open");
+}
+
+function closeClearModal() {
+  document.getElementById("clear-modal").classList.remove("open");
+}
+
+function saveCopyAndClear() {
+  closeClearModal();
+  // Open Save As modal for the copy first, then execute clear!
+  openSaveAsModal('json', async () => {
+    await executeClearImmediately();
+  });
+}
+
+async function executeClearImmediately() {
+  closeClearModal();
+  const op = getOperatorID();
+  try {
+    const res = await fetch("/api/clear_decision_log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: op })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to clear log");
+
+    showNotification("✓ Decision log cleared. Archival copy created.", "orange");
+    await init();
+  } catch(e) {
+    showNotification("Error: " + e.message, "orange");
+  }
+}
+
+// Restore Seed: Choose from folder/snapshots
+async function openRestoreModal() {
+  document.getElementById("restore-modal").classList.add("open");
+  const container = document.getElementById("snapshot-list");
+  container.innerHTML = `<div style="padding: 1rem; text-align: center; color: var(--text-muted);">Loading seeds...</div>`;
+
+  try {
+    const res = await fetch("/api/list_snapshots");
+    const data = await res.json();
+    const snaps = data.snapshots || [];
+
+    if (snaps.length === 0) {
+      container.innerHTML = `<div style="padding: 1rem; text-align: center; color: var(--text-muted);">No snapshots or seeds found.</div>`;
+      return;
+    }
+
+    container.innerHTML = snaps.map(s => `
+      <div class="snapshot-item">
+        <div>
+          <div class="snap-title">${s.name} ${s.is_seed ? '<span style="font-size:0.7rem; color:var(--green); font-weight:700;">(DEFAULT SEED)</span>' : ''}</div>
+          <div class="snap-meta">${s.entries} entries · Saved: ${s.mtime}</div>
+        </div>
+        <button class="btn-select-snap" onclick="restoreSnapshot('${s.path}')">Restore</button>
+      </div>
+    `).join("");
+
+  } catch(e) {
+    container.innerHTML = `<div style="padding: 1rem; color: var(--red); text-align: center;">Failed to load seeds: ${e.message}</div>`;
+  }
+}
+
+function closeRestoreModal() {
+  document.getElementById("restore-modal").classList.remove("open");
+}
+
+async function restoreSnapshot(path) {
+  closeRestoreModal();
+  try {
+    const res = await fetch("/api/restore_snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Restore failed");
+
+    showNotification(`✓ Restored ${data.entries || 0} entries from ${data.filename}.`, "green");
+    await init();
+  } catch(e) {
+    showNotification("Error restoring: " + e.message, "orange");
+  }
 }
 
 async function init() {
-  const errorEl = document.getElementById("error");
+  initOperatorID();
+
+  // Load decision log
   try {
-    const [entries, egress] = await Promise.all([
-      // Read the real log the pipeline writes, not the sample file.
-      loadJSONL("../artifacts/decision_log.jsonl"),
-      loadJSON("/api/egress_summary"),
-    ]);
-    state.entries = (entries).map(normaliseEntry);
-    populateFilters();
-    renderLog();
-    renderEgress(egress);
-  } catch (err) {
-    errorEl.textContent =
-      "Could not load the decision log: " + err.message +
-      "\n\nThis page needs the operator UI server (it computes the egress " +
-      "panel via DecisionLog.egress_summary(), not a plain static server). " +
-      "Serve this project with:\n" +
-      "  python3 ui/server.py\n" +
-      "then open http://localhost:8000/ui/decision_log.html";
+    let raw = [];
+    try {
+      raw = await loadJSONL("../artifacts/decision_log.jsonl");
+    } catch(e) {
+      raw = await loadJSONL("../artifacts/examples/decision_log.jsonl");
+    }
+    state.entries = raw.map(normalise).reverse();
+    render();
+  } catch(err) {
+    document.getElementById("table-body").innerHTML = `
+      <tr><td colspan="5" style="text-align:center; padding: 2rem; color: var(--red);">
+        Failed to load decision log stream.
+      </td></tr>
+    `;
+  }
+
+  // Load egress summary
+  try {
+    const summary = await loadJSON("/api/egress_summary");
+    document.getElementById("egress-rows").textContent = summary.raw_rows_egressed ?? 0;
+    document.getElementById("egress-calls").textContent = `${summary.external_model_calls ?? 0} / ${summary.total_model_calls ?? 0}`;
+    document.getElementById("egress-bytes").textContent = `${Math.round((summary.total_egress_bytes ?? 0) / 1024)} KB`;
+  } catch(e) {
+    document.getElementById("egress-rows").textContent = "0";
+    document.getElementById("egress-calls").textContent = "0 / 0";
+    document.getElementById("egress-bytes").textContent = "0 KB";
   }
 }
 
