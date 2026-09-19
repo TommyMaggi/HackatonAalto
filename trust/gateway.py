@@ -140,11 +140,99 @@ def _call_stub(cfg: dict, prompt: str, schema_out: dict | None) -> str:
     })
 
 
+def _api_key(cfg: dict) -> str:
+    """Read the key from the environment named in config, never from the file.
+
+    Keys must not live in config/llm.yaml: that file is committed. The config
+    names an environment variable and we read it here.
+    """
+    import os
+    var = cfg.get("api_key_env")
+    if not var:
+        raise ValueError(
+            "this provider needs api_key_env set in config/llm.yaml, naming the "
+            "environment variable that holds the key"
+        )
+    key = os.environ.get(var)
+    if not key:
+        raise ValueError(f"environment variable {var} is not set")
+    return key
+
+
+def _post_json(url: str, body: dict, headers: dict, timeout: int) -> dict:
+    import urllib.request
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _call_google(cfg: dict, prompt: str, schema_out: dict | None) -> str:
+    """Google AI Studio (Gemini). EGRESS: the payload leaves the machine.
+
+    Chosen as the interim provider while the local model is being set up. The
+    decision log records every call, so swapping back to `local` later is a
+    config change and the egress numbers speak for themselves.
+    """
+    endpoint = cfg.get("endpoint") or "https://generativelanguage.googleapis.com/v1beta"
+    url = f"{endpoint.rstrip('/')}/models/{cfg['model']}:generateContent?key={_api_key(cfg)}"
+    body: dict[str, Any] = {"contents": [{"parts": [{"text": prompt}]}]}
+    gen: dict[str, Any] = {"temperature": 0}
+    if schema_out:
+        # Ask for JSON back so the stage never has to parse prose.
+        gen["response_mime_type"] = "application/json"
+    body["generationConfig"] = gen
+    data = _post_json(url, body, {}, cfg.get("timeout_s", 120))
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def _call_anthropic(cfg: dict, prompt: str, schema_out: dict | None) -> str:
+    """Anthropic Messages API. EGRESS."""
+    endpoint = cfg.get("endpoint") or "https://api.anthropic.com/v1"
+    url = f"{endpoint.rstrip('/')}/messages"
+    body = {
+        "model": cfg["model"],
+        "max_tokens": cfg.get("max_tokens", 1024),
+        "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    headers = {"x-api-key": _api_key(cfg), "anthropic-version": "2023-06-01"}
+    data = _post_json(url, body, headers, cfg.get("timeout_s", 120))
+    return data["content"][0]["text"]
+
+
+def _call_openai_compatible(cfg: dict, prompt: str, schema_out: dict | None) -> str:
+    """Any OpenAI-shaped chat endpoint. EGRESS.
+
+    Covers OpenAI, Groq, Together, Mistral and most hosted gateways: only the
+    endpoint and model name change, which is the point of keeping providers as
+    functions behind one call site.
+    """
+    endpoint = cfg.get("endpoint") or "https://api.openai.com/v1"
+    url = f"{endpoint.rstrip('/')}/chat/completions"
+    body: dict[str, Any] = {
+        "model": cfg["model"],
+        "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if schema_out:
+        body["response_format"] = {"type": "json_object"}
+    headers = {"Authorization": f"Bearer {_api_key(cfg)}"}
+    data = _post_json(url, body, headers, cfg.get("timeout_s", 120))
+    return data["choices"][0]["message"]["content"]
+
+
+# Adding a provider is a function plus one line here. No stage changes, no
+# rewrite: that swappability is Deliverable 8.
 _PROVIDERS = {
-    "local": _call_local,
-    "stub": _call_stub,
-    # eu_hosted / anthropic / google: add a function here and set provider in
-    # config/llm.yaml. No other file changes.
+    "local": _call_local,            # no egress
+    "stub": _call_stub,              # no egress, no model
+    "google": _call_google,          # egress
+    "anthropic": _call_anthropic,    # egress
+    "openai": _call_openai_compatible,   # egress
+    "eu_hosted": _call_openai_compatible,  # egress, EU endpoint set in config
 }
 
 
