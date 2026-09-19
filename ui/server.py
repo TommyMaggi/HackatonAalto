@@ -93,6 +93,19 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
+    def end_headers(self):
+        """Disable browser caching.
+
+        Added 19 Sep after an hour lost to a page that had been fixed on disk
+        but not in the browser. During a build every reload must show what the
+        files actually say, so we forbid caching outright. This is a dev
+        server; the cost is nil.
+        """
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)

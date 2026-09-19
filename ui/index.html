@@ -315,6 +315,19 @@ function renderRows() {
   const tbody = document.getElementById("report-body");
   tbody.innerHTML = "";
 
+  // An empty table used to look like a styling problem. Say what is wrong
+  // instead, so the next person does not spend an hour on it.
+  if (!state.inferences.length) {
+    tbody.innerHTML =
+      `<tr><td colspan="5" style="padding:1rem;color:#b00">` +
+      `No inferences to show. artifacts/semantics.json loaded but contained ` +
+      `neither an "inferences" array nor any col_NNN keys. ` +
+      `Run <code>make check</code>, then hard-reload this page ` +
+      `(Cmd+Shift+R) in case the browser cached an older build.` +
+      `</td></tr>`;
+    return;
+  }
+
   for (const inf of state.inferences) {
     const row = document.createElement("tr");
     row.className = "row" + (inf.human_override ? " overridden" : "");
