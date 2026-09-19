@@ -117,7 +117,12 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/egress_summary":
             try:
-                log = DecisionLog(path=EXAMPLES_DECISION_LOG_PATH)
+                # Read the log the pipeline actually writes. This used to point
+                # at the sample file, so the panel reported an invented model
+                # call while the real pipeline had made none. An egress panel
+                # that does not describe reality is worse than no panel:
+                # Deliverable 8 is precisely the claim that this number is true.
+                log = DecisionLog(path=DECISION_LOG_PATH)
                 self._send_json(200, log.egress_summary())
             except Exception as exc:
                 self._send_json(500, {"error": f"internal error: {exc}"})

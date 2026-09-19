@@ -118,6 +118,31 @@ async function loadJSON(path) {
   return res.json();
 }
 
+// Entries exist in two formats. The trust layer writes the contract format;
+// the pipeline stages wrote a flatter one before the adapter was introduced,
+// and those older lines are still in the log. Normalise both so the table,
+// the filters and the badges work on either. Added 19 Sep.
+function normaliseEntry(e, i) {
+  if (e.actor && e.kind) return e;   // already the contract format
+
+  const model = e.model_used || null;
+  return {
+    entry_id: e.entry_id || `log_${String(i).padStart(4, "0")}`,
+    at: e.at || e.timestamp || "—",
+    actor: e.actor || {
+      type: model ? "model" : "system",
+      ...(model ? { name: model } : {}),
+    },
+    stage: e.stage || "—",
+    kind: e.kind || (model ? "model_call" : "inference"),
+    summary: e.summary || [e.action, e.details].filter(Boolean).join(": ") || "—",
+    evidence_ids: e.evidence_ids || [],
+    confidence: e.confidence || null,
+    model_call: e.model_call || null,
+    override: e.override || null,
+  };
+}
+
 function actorLabel(actor) {
   if (!actor) return "—";
   return actor.name ? `${actor.type} · ${actor.name}` : actor.type;
@@ -285,7 +310,7 @@ async function init() {
       loadJSONL("../artifacts/decision_log.jsonl"),
       loadJSON("/api/egress_summary"),
     ]);
-    state.entries = entries;
+    state.entries = (entries).map(normaliseEntry);
     populateFilters();
     renderLog();
     renderEgress(egress);
