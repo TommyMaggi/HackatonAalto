@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Decision Log</title>
+<style>
+  body { font-family: sans-serif; margin: 2rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ccc; vertical-align: top; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: #f2f2f2; }
+  tr.detail td { background: #fafafa; padding: 0.6rem; }
+  .evidence-card { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.4rem 0; }
+  .evidence-field { margin: 0.15rem 0; }
+  .evidence-field b { display: inline-block; min-width: 8rem; }
+  #error { color: #c00; white-space: pre-wrap; font-family: monospace; }
+  .topnav { margin-bottom: 0.5rem; font-size: 0.85rem; }
+  .topnav a { margin-right: 1rem; color: #555; text-decoration: none; }
+  .topnav a.current { color: #000; font-weight: bold; }
+  .topnav a:hover { text-decoration: underline; }
+
+  .egress-panel {
+    border: 1px solid #ccc; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0 1.5rem;
+    background: #fafafa;
+  }
+  .egress-panel h2 { margin: 0 0 0.75rem; font-size: 1rem; color: #333; }
+  .stat-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .stat-tile { flex: 1; min-width: 10rem; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; background: #fff; }
+  .stat-tile .value { font-size: 2rem; font-weight: bold; line-height: 1.1; }
+  .stat-tile .label { font-size: 0.78rem; color: #666; margin-top: 0.2rem; }
+  .stat-tile .sublabel { font-size: 0.72rem; margin-top: 0.15rem; }
+  .stat-tile.good .value { color: #146c2e; }
+  .stat-tile.good .sublabel { color: #146c2e; font-weight: bold; }
+  .egress-detail { font-size: 0.78rem; color: #555; margin-top: 0.75rem; }
+  .egress-detail b { color: #333; }
+
+  .filters { margin: 1rem 0; display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
+  .filters label { display: block; font-size: 0.78rem; color: #555; margin-bottom: 0.2rem; }
+  .filters select { padding: 0.3rem 0.4rem; font: inherit; min-width: 10rem; }
+  .filters .count { font-size: 0.82rem; color: #666; align-self: center; }
+
+  .kind-badge {
+    display: inline-block; font-size: 0.7rem; font-weight: bold; padding: 0.05rem 0.4rem;
+    border-radius: 3px; border: 1px solid #999; color: #444;
+  }
+  .kind-override { border-color: #a12626; color: #a12626; }
+  .kind-human_review { border-color: #8a6d00; color: #8a6d00; }
+  .kind-model_call { border-color: #1b5fa8; color: #1b5fa8; }
+  .actor-human { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">Sensor report</a>
+  <a class="current" href="decision_log.html">Decision log</a>
+</nav>
+<h1>Decision Log</h1>
+<div id="error"></div>
+
+<div class="egress-panel">
+  <h2>Egress summary — what left this machine</h2>
+  <div id="egress-stats" class="stat-row"><em>loading…</em></div>
+  <div id="egress-detail" class="egress-detail"></div>
+</div>
+
+<div class="filters">
+  <div>
+    <label for="filter-stage">Stage</label>
+    <select id="filter-stage"><option value="">All</option></select>
+  </div>
+  <div>
+    <label for="filter-kind">Kind</label>
+    <select id="filter-kind"><option value="">All</option></select>
+  </div>
+  <div>
+    <label for="filter-actor">Actor</label>
+    <select id="filter-actor"><option value="">All</option></select>
+  </div>
+  <div class="count" id="filter-count"></div>
+</div>
+
+<table id="log">
+  <thead>
+    <tr><th>entry_id</th><th>at</th><th>actor</th><th>stage</th><th>kind</th><th>summary</th></tr>
+  </thead>
+  <tbody id="log-body"></tbody>
+</table>
+
+<script>
+// state: one flat object, no framework.
+const state = {
+  entries: [],           // raw decision_log.jsonl lines
+  expanded: new Set(),   // entry_ids currently expanded
+  filters: { stage: "", kind: "", actor: "" },
+};
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function fmtVal(v) {
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
+async function loadJSONL(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  const text = await res.text();
+  return text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+}
+
+async function loadJSON(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return res.json();
+}
+
+function actorLabel(actor) {
+  if (!actor) return "—";
+  return actor.name ? `${actor.type} · ${actor.name}` : actor.type;
+}
+
+function fmtBytes(n) {
+  if (!n) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0, v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+function populateFilters() {
+  const stages = [...new Set(state.entries.map((e) => e.stage))].sort();
+  const kinds = [...new Set(state.entries.map((e) => e.kind))].sort();
+  const actors = [...new Set(state.entries.map((e) => actorLabel(e.actor)))].sort();
+
+  const fill = (id, values) => {
+    const el = document.getElementById(id);
+    for (const v of values) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      el.appendChild(opt);
+    }
+  };
+  fill("filter-stage", stages);
+  fill("filter-kind", kinds);
+  fill("filter-actor", actors);
+
+  document.getElementById("filter-stage").addEventListener("change", (e) => {
+    state.filters.stage = e.target.value;
+    renderLog();
+  });
+  document.getElementById("filter-kind").addEventListener("change", (e) => {
+    state.filters.kind = e.target.value;
+    renderLog();
+  });
+  document.getElementById("filter-actor").addEventListener("change", (e) => {
+    state.filters.actor = e.target.value;
+    renderLog();
+  });
+}
+
+function filteredEntries() {
+  return state.entries.filter((e) =>
+    (!state.filters.stage || e.stage === state.filters.stage) &&
+    (!state.filters.kind || e.kind === state.filters.kind) &&
+    (!state.filters.actor || actorLabel(e.actor) === state.filters.actor)
+  );
+}
+
+function renderDetail(entry) {
+  const parts = [];
+  if (entry.subject && entry.subject.length) {
+    parts.push(`<div class="evidence-field"><b>subject</b> ${entry.subject.map(escapeHtml).join(", ")}</div>`);
+  }
+  if (entry.evidence_ids && entry.evidence_ids.length) {
+    parts.push(`<div class="evidence-field"><b>evidence_ids</b> ${entry.evidence_ids.map(escapeHtml).join(", ")}</div>`);
+  }
+  if (entry.confidence) {
+    parts.push(`<div class="evidence-field"><b>confidence</b> ${escapeHtml(entry.confidence)}</div>`);
+  }
+  if (entry.epistemic_status) {
+    parts.push(`<div class="evidence-field"><b>epistemic_status</b> ${escapeHtml(entry.epistemic_status)}</div>`);
+  }
+  if (entry.model_call) {
+    const mc = entry.model_call;
+    parts.push(`<div class="evidence-card">
+      <div class="evidence-field"><b>provider / model</b> ${escapeHtml(mc.provider)} / ${escapeHtml(mc.model)}</div>
+      <div class="evidence-field"><b>purpose</b> ${escapeHtml(mc.purpose)}</div>
+      <div class="evidence-field"><b>payload_kinds</b> ${(mc.payload_kinds || []).map(escapeHtml).join(", ")}</div>
+      <div class="evidence-field"><b>payload_bytes</b> ${escapeHtml(mc.payload_bytes)}</div>
+      <div class="evidence-field"><b>egress</b> ${mc.egress ? "left the machine" : "local — no egress"}</div>
+    </div>`);
+  }
+  if (entry.override) {
+    const ov = entry.override;
+    parts.push(`<div class="evidence-card">
+      <div class="evidence-field"><b>target</b> ${escapeHtml(ov.target)}</div>
+      <div class="evidence-field"><b>from</b> ${escapeHtml(fmtVal(ov.from))}</div>
+      <div class="evidence-field"><b>to</b> ${escapeHtml(fmtVal(ov.to))}</div>
+      <div class="evidence-field"><b>rationale</b> ${escapeHtml(ov.rationale)}</div>
+    </div>`);
+  }
+  return parts.length ? parts.join("") : "<em>no further detail on this entry</em>";
+}
+
+function renderLog() {
+  const tbody = document.getElementById("log-body");
+  tbody.innerHTML = "";
+  const rows = filteredEntries();
+  document.getElementById("filter-count").textContent = `${rows.length} of ${state.entries.length} entries`;
+
+  for (const entry of rows) {
+    const row = document.createElement("tr");
+    row.className = "row";
+    row.dataset.id = entry.entry_id;
+    row.innerHTML = `
+      <td>${escapeHtml(entry.entry_id)}</td>
+      <td>${escapeHtml(entry.at)}</td>
+      <td class="${entry.actor && entry.actor.type === "human" ? "actor-human" : ""}">${escapeHtml(actorLabel(entry.actor))}</td>
+      <td>${escapeHtml(entry.stage)}</td>
+      <td><span class="kind-badge kind-${escapeHtml(entry.kind)}">${escapeHtml(entry.kind)}</span></td>
+      <td>${escapeHtml(entry.summary)}</td>
+    `;
+    row.addEventListener("click", () => toggleRow(entry.entry_id));
+    tbody.appendChild(row);
+
+    if (state.expanded.has(entry.entry_id)) {
+      const detail = document.createElement("tr");
+      detail.className = "detail";
+      detail.innerHTML = `<td colspan="6">${renderDetail(entry)}</td>`;
+      tbody.appendChild(detail);
+    }
+  }
+}
+
+function toggleRow(id) {
+  if (state.expanded.has(id)) state.expanded.delete(id);
+  else state.expanded.add(id);
+  renderLog();
+}
+
+function renderEgress(summary) {
+  const el = document.getElementById("egress-stats");
+  const left = summary.calls_that_left_the_machine || 0;
+  const total = summary.total_model_calls || 0;
+  el.innerHTML = `
+    <div class="stat-tile">
+      <div class="value">${total}</div>
+      <div class="label">model calls</div>
+    </div>
+    <div class="stat-tile ${left === 0 ? "good" : ""}">
+      <div class="value">${left} / ${total}</div>
+      <div class="label">calls that left this machine</div>
+      ${left === 0 ? '<div class="sublabel">none — every call ran locally</div>' : ""}
+    </div>
+    <div class="stat-tile">
+      <div class="value">${fmtBytes(summary.bytes_that_left)}</div>
+      <div class="label">bytes that left</div>
+    </div>
+    <div class="stat-tile good">
+      <div class="value">${summary.raw_rows_sent ?? 0}</div>
+      <div class="label">raw data rows sent</div>
+      <div class="sublabel">zero — by construction of the gateway</div>
+    </div>
+  `;
+
+  const providers = (summary.providers || []).join(", ") || "—";
+  const models = (summary.models || []).join(", ") || "—";
+  const kinds = (summary.payload_kinds_sent || []).join(", ") || "—";
+  document.getElementById("egress-detail").innerHTML =
+    `<b>providers</b> ${escapeHtml(providers)} &nbsp;·&nbsp; ` +
+    `<b>models</b> ${escapeHtml(models)} &nbsp;·&nbsp; ` +
+    `<b>payload kinds sent</b> ${escapeHtml(kinds)}`;
+}
+
+async function init() {
+  const errorEl = document.getElementById("error");
+  try {
+    const [entries, egress] = await Promise.all([
+      loadJSONL("../artifacts/examples/decision_log.jsonl"),
+      loadJSON("/api/egress_summary"),
+    ]);
+    state.entries = entries;
+    populateFilters();
+    renderLog();
+    renderEgress(egress);
+  } catch (err) {
+    errorEl.textContent =
+      "Could not load the decision log: " + err.message +
+      "\n\nThis page needs the operator UI server (it computes the egress " +
+      "panel via DecisionLog.egress_summary(), not a plain static server). " +
+      "Serve this project with:\n" +
+      "  python3 ui/server.py\n" +
+      "then open http://localhost:8000/ui/decision_log.html";
+  }
+}
+
+init();
+</script>
+</body>
+</html>

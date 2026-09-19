@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sensor Report</title>
+<style>
+  body { font-family: sans-serif; margin: 2rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ccc; vertical-align: top; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: #f2f2f2; }
+  tr.detail td { background: #fafafa; padding: 0.6rem; }
+  .evidence-card { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.4rem 0; }
+  .evidence-card.missing { border-color: #c00; color: #c00; }
+  .evidence-field { margin: 0.15rem 0; }
+  .evidence-field b { display: inline-block; min-width: 6rem; }
+  .conf-high { color: #146c2e; }
+  .conf-medium { color: #8a6d00; }
+  .conf-low { color: #a12626; }
+  #error { color: #c00; white-space: pre-wrap; font-family: monospace; }
+  .operator-bar { margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; }
+  .operator-bar input { padding: 0.3rem 0.5rem; font: inherit; }
+  tr.row.overridden { background: #fff4d6; }
+  tr.row.overridden:hover { background: #ffe8b0; }
+  .override-badge {
+    display: inline-block; background: #a12626; color: #fff; font-size: 0.68rem;
+    font-weight: bold; letter-spacing: 0.02em; padding: 0.1rem 0.4rem; border-radius: 3px;
+    margin-left: 0.4rem; vertical-align: middle;
+  }
+  .role-original { text-decoration: line-through; color: #888; margin-left: 0.4rem; }
+  .override-meta { font-size: 0.78rem; color: #555; margin-top: 0.3rem; }
+  .actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+  .actions button {
+    font-size: 0.78rem; padding: 0.2rem 0.5rem; cursor: pointer;
+    border: 1px solid #999; border-radius: 3px; background: #fff;
+  }
+  .btn-accept { border-color: #146c2e; color: #146c2e; }
+  .btn-contest { border-color: #8a6d00; color: #8a6d00; }
+  .btn-override { border-color: #a12626; color: #a12626; }
+  .inline-form { margin-top: 0.4rem; display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: flex-start; }
+  .inline-form input, .inline-form textarea { font: inherit; padding: 0.2rem 0.4rem; }
+  .inline-form input { min-width: 12rem; }
+  .inline-form textarea { min-width: 14rem; }
+  .flash { font-size: 0.78rem; margin-top: 0.3rem; }
+  .flash.ok { color: #146c2e; }
+  .flash.err { color: #a12626; }
+  .topnav { margin-bottom: 0.5rem; font-size: 0.85rem; }
+  .topnav a { margin-right: 1rem; color: #555; text-decoration: none; }
+  .topnav a.current { color: #000; font-weight: bold; }
+  .topnav a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <a class="current" href="index.html">Sensor report</a>
+  <a href="decision_log.html">Decision log</a>
+</nav>
+<h1>Sensor Report</h1>
+<div class="operator-bar">
+  <label for="operator-name">Operator</label>
+  <input id="operator-name" type="text" placeholder="your name or id" autocomplete="off">
+</div>
+<div id="error"></div>
+<table id="report">
+  <thead>
+    <tr><th>col_id</th><th>role</th><th>confidence</th><th>epistemic_status</th><th>operator</th></tr>
+  </thead>
+  <tbody id="report-body"></tbody>
+</table>
+
+<script>
+// state: one flat object, no framework.
+const state = {
+  inferences: [],      // raw semantics.json inferences[]
+  evidenceById: {},    // merged evidence, keyed by evidence_id
+  expanded: new Set(), // col_ids currently expanded
+  uiByCol: {},          // col_id -> { formOpen: null|"contest"|"override", flash: null|{ok, text} }
+};
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function uiFor(colId) {
+  if (!state.uiByCol[colId]) state.uiByCol[colId] = { formOpen: null, flash: null };
+  return state.uiByCol[colId];
+}
+
+function operatorName() {
+  return (document.getElementById("operator-name").value || "").trim();
+}
+
+function saveOperatorName() {
+  try { localStorage.setItem("operatorName", operatorName()); } catch (e) { /* ignore */ }
+}
+
+function loadOperatorName() {
+  try { return localStorage.getItem("operatorName") || ""; } catch (e) { return ""; }
+}
+
+async function postDecision(payload) {
+  const res = await fetch("/api/decision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function setFlash(colId, ok, text) {
+  uiFor(colId).flash = { ok, text };
+  renderRows();
+}
+
+async function doAccept(colId) {
+  const by = operatorName();
+  if (!by) return setFlash(colId, false, "enter an operator name first");
+  try {
+    await postDecision({ col_id: colId, action: "accept", by });
+    setFlash(colId, true, "accepted — logged");
+  } catch (err) {
+    setFlash(colId, false, err.message);
+  }
+}
+
+function openForm(colId, kind) {
+  uiFor(colId).formOpen = kind;
+  uiFor(colId).flash = null;
+  renderRows();
+}
+
+function closeForm(colId) {
+  uiFor(colId).formOpen = null;
+  renderRows();
+}
+
+async function submitContest(colId) {
+  const by = operatorName();
+  const rationale = document.getElementById(`contest-reason-${colId}`).value.trim();
+  if (!by) return setFlash(colId, false, "enter an operator name first");
+  if (!rationale) return setFlash(colId, false, "a reason is required to contest");
+  try {
+    await postDecision({ col_id: colId, action: "contest", by, rationale });
+    uiFor(colId).formOpen = null;
+    setFlash(colId, true, "contested — logged");
+  } catch (err) {
+    setFlash(colId, false, err.message);
+  }
+}
+
+async function submitOverride(colId) {
+  const by = operatorName();
+  const role = document.getElementById(`override-role-${colId}`).value.trim();
+  const rationale = document.getElementById(`override-reason-${colId}`).value.trim();
+  if (!by) return setFlash(colId, false, "enter an operator name first");
+  if (!role) return setFlash(colId, false, "the corrected role is required");
+  if (!rationale) return setFlash(colId, false, "a reason is required to override");
+  try {
+    const data = await postDecision({ col_id: colId, action: "override", by, role, rationale });
+    const idx = state.inferences.findIndex((i) => i.col_id === colId);
+    if (idx !== -1 && data.inference) state.inferences[idx] = data.inference;
+    uiFor(colId).formOpen = null;
+    setFlash(colId, true, "override recorded");
+  } catch (err) {
+    setFlash(colId, false, err.message);
+  }
+}
+
+async function loadJSON(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return res.json();
+}
+
+function mergeEvidence(...arrays) {
+  const byId = {};
+  for (const arr of arrays) {
+    for (const ev of arr || []) byId[ev.evidence_id] = ev;
+  }
+  return byId;
+}
+
+function fmtValue(value) {
+  if (value == null) return "—";
+  return Object.entries(value)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+}
+
+function fmtWindow(window) {
+  if (!window) return "—";
+  const parts = [];
+  if (window.run != null) parts.push(`run ${window.run}`);
+  if (window.from != null && window.to != null) parts.push(`[${window.from}, ${window.to}]`);
+  return parts.length ? parts.join(" ") : "—";
+}
+
+function renderEvidenceCard(evidenceId) {
+  const ev = state.evidenceById[evidenceId];
+  if (!ev) {
+    return `<div class="evidence-card missing">
+      <div class="evidence-field"><b>evidence_id</b> ${evidenceId}</div>
+      <div class="evidence-field">evidence not found in profiles.json or relations.json</div>
+    </div>`;
+  }
+  return `<div class="evidence-card">
+    <div class="evidence-field"><b>evidence_id</b> ${ev.evidence_id} (${ev.stage} / ${ev.kind})</div>
+    <div class="evidence-field"><b>method</b> ${ev.method}</div>
+    <div class="evidence-field"><b>value</b> ${fmtValue(ev.value)}</div>
+    <div class="evidence-field"><b>window</b> ${fmtWindow(ev.window)}</div>
+  </div>`;
+}
+
+function renderRoleCell(inf) {
+  if (!inf.human_override) return escapeHtml(inf.role);
+  return `${escapeHtml(inf.human_override.role)}` +
+    `<span class="role-original">${escapeHtml(inf.role)}</span>` +
+    `<span class="override-badge">HUMAN OVERRIDE</span>`;
+}
+
+function renderActionsCell(inf) {
+  const colId = inf.col_id;
+  const ui = uiFor(colId);
+  let html = `<div class="actions">
+    <button class="btn-accept" data-action="accept" data-col="${colId}">Accept</button>
+    <button class="btn-contest" data-action="open-contest" data-col="${colId}">Contest</button>
+    <button class="btn-override" data-action="open-override" data-col="${colId}">Override</button>
+  </div>`;
+
+  if (ui.formOpen === "contest") {
+    html += `<div class="inline-form">
+      <textarea id="contest-reason-${colId}" rows="2" placeholder="why do you contest this?"></textarea>
+      <button data-action="submit-contest" data-col="${colId}">Send</button>
+      <button data-action="cancel-form" data-col="${colId}">Cancel</button>
+    </div>`;
+  }
+
+  if (ui.formOpen === "override") {
+    const prefill = inf.human_override ? inf.human_override.role : inf.role;
+    html += `<div class="inline-form">
+      <input id="override-role-${colId}" type="text" value="${escapeHtml(prefill)}" placeholder="corrected role">
+      <textarea id="override-reason-${colId}" rows="2" placeholder="why?"></textarea>
+      <button data-action="submit-override" data-col="${colId}">Confirm override</button>
+      <button data-action="cancel-form" data-col="${colId}">Cancel</button>
+    </div>`;
+  }
+
+  if (inf.human_override) {
+    html += `<div class="override-meta">overridden by <b>${escapeHtml(inf.human_override.by)}</b> · ` +
+      `${escapeHtml(inf.human_override.at)}<br>&ldquo;${escapeHtml(inf.human_override.rationale)}&rdquo;</div>`;
+  }
+
+  if (ui.flash) {
+    html += `<div class="flash ${ui.flash.ok ? "ok" : "err"}">${escapeHtml(ui.flash.text)}</div>`;
+  }
+
+  return html;
+}
+
+function renderRows() {
+  const tbody = document.getElementById("report-body");
+  tbody.innerHTML = "";
+
+  for (const inf of state.inferences) {
+    const row = document.createElement("tr");
+    row.className = "row" + (inf.human_override ? " overridden" : "");
+    row.dataset.col = inf.col_id;
+    row.innerHTML = `
+      <td>${inf.col_id}</td>
+      <td>${renderRoleCell(inf)}</td>
+      <td class="conf-${inf.confidence}">${inf.confidence}</td>
+      <td>${inf.epistemic_status}</td>
+      <td>${renderActionsCell(inf)}</td>
+    `;
+    tbody.appendChild(row);
+
+    if (state.expanded.has(inf.col_id)) {
+      const detail = document.createElement("tr");
+      detail.className = "detail";
+      const ids = inf.evidence_ids || [];
+      const cards = ids.length
+        ? ids.map(renderEvidenceCard).join("")
+        : "<em>no evidence_ids on this inference</em>";
+      detail.innerHTML = `<td colspan="5">
+        <div><b>reasoning:</b> ${inf.reasoning || "—"}</div>
+        ${cards}
+      </td>`;
+      tbody.appendChild(detail);
+    }
+  }
+}
+
+function toggleRow(colId) {
+  if (state.expanded.has(colId)) state.expanded.delete(colId);
+  else state.expanded.add(colId);
+  renderRows();
+}
+
+function wireReportBody() {
+  document.getElementById("report-body").addEventListener("click", (e) => {
+    const actionEl = e.target.closest("[data-action]");
+    if (actionEl) {
+      e.stopPropagation();
+      const { action, col } = actionEl.dataset;
+      if (action === "accept") doAccept(col);
+      else if (action === "open-contest") openForm(col, "contest");
+      else if (action === "open-override") openForm(col, "override");
+      else if (action === "submit-contest") submitContest(col);
+      else if (action === "submit-override") submitOverride(col);
+      else if (action === "cancel-form") closeForm(col);
+      return;
+    }
+    if (e.target.closest(".inline-form")) return; // typing shouldn't toggle the row
+    const row = e.target.closest("tr.row");
+    if (row) toggleRow(row.dataset.col);
+  });
+}
+
+async function init() {
+  const errorEl = document.getElementById("error");
+  const nameInput = document.getElementById("operator-name");
+  nameInput.value = loadOperatorName();
+  nameInput.addEventListener("input", saveOperatorName);
+  wireReportBody();
+
+  try {
+    const [semantics, profiles, relations] = await Promise.all([
+      loadJSON("../artifacts/semantics.json"),
+      loadJSON("../artifacts/profiles.json"),
+      loadJSON("../artifacts/relations.json"),
+    ]);
+    state.inferences = semantics.inferences || [];
+    state.evidenceById = mergeEvidence(profiles.evidence, relations.evidence);
+    renderRows();
+  } catch (err) {
+    errorEl.textContent =
+      "Could not load artifacts: " + err.message +
+      "\n\nThis page reads JSON files relative to ui/index.html, needs " +
+      "artifacts/semantics.json, profiles.json and relations.json to exist " +
+      "(run `make setup` if they don't), and the operator/override controls " +
+      "need the write endpoint the plain static server doesn't have. Serve " +
+      "this project with:\n" +
+      "  python3 ui/server.py\n" +
+      "then open http://localhost:8000/ui/";
+  }
+}
+
+init();
+</script>
+</body>
+</html>
