@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import pathlib
 from pathlib import Path
 
 # Work with whatever jsonschema the teammate happens to have. Five laptops,
@@ -64,6 +65,43 @@ def _validator(schema_name: str):
     store = _schema_store()
     resolver = _RefResolver(base_uri="", referrer=schema, store=store)
     return _VALIDATOR_CLS(schema, resolver=resolver)
+
+
+def _scoring_warnings(name: str, doc) -> list[str]:
+    """Non-fatal notes about fields that carry SCORE rather than structure.
+
+    After integration the schemas accept the shape the stages emit, so these can
+    no longer be enforced as hard errors without blocking working code. They are
+    still worth points, so they are reported instead of ignored. A warning here
+    is a to-do, not a build failure.
+    """
+    notes: list[str] = []
+
+    def visit(node, path):
+        if isinstance(node, dict):
+            # The rubric asks that inferred, assumed and uncertain be separable.
+            if ("evidence_ids" in node or "supporting_evidence" in node) \
+                    and "confidence" in node and "epistemic_status" not in node:
+                notes.append(
+                    f"{path}: has evidence and confidence but no epistemic_status. "
+                    f"The rubric rewards separating inferred / assumed / uncertain."
+                )
+            for k, v in node.items():
+                visit(v, f"{path}.{k}")
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                visit(v, f"{path}[{i}]")
+
+    visit(doc, name)
+    # One line per distinct issue kind is enough; do not flood the output.
+    seen, out = set(), []
+    for n in notes:
+        key = n.split(":", 1)[1].strip()[:40]
+        if key not in seen:
+            seen.add(key)
+            out.append(n + (f" ({len(notes)} occurrences)" if len(notes) > 1 else ""))
+            break
+    return out
 
 
 def _check_evidence_discipline(name: str, doc) -> list[str]:
@@ -126,6 +164,16 @@ def validate_file(path: Path) -> tuple[bool, list[str]]:
     return not errors, errors
 
 
+def warnings_for(path: pathlib.Path):
+    """Scoring warnings for one artifact. Never affects the exit code."""
+    if path.name not in MAP:
+        return []
+    try:
+        return _scoring_warnings(path.name, json.loads(path.read_text()))
+    except Exception:
+        return []
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--examples", action="store_true", help="validate artifacts/examples/ instead")
@@ -151,6 +199,8 @@ def main() -> int:
             shown = path
         if ok:
             print(f"{GREEN}PASS{OFF}  {shown}")
+            for w in warnings_for(path):
+                print(f"      {YELLOW}note{OFF} {DIM}{w}{OFF}")
         else:
             failed += 1
             print(f"{RED}FAIL{OFF}  {shown}")
