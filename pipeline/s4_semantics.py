@@ -7,7 +7,15 @@ The role of each column is asked of the model through trust.gateway.call_model()
 one call per column, from a payload generated out of the profiles and relations.
 When no model answers (provider stub, Ollama down, payload refused by the gate,
 unusable answer), that column keeps the statistical pre-analysis and says so:
-source "structural_heuristic". The pipeline never stops for lack of a model.
+source "structural_heuristic".
+
+If NO column was answered by a model, the run is degraded and says so loudly:
+the artifact carries a top-level "degraded": true, the decision log gets a
+config_change entry, and the process exits with DEGRADED_EXIT (3). The artifact
+is still written, so downstream stages can run, but nobody can mistake a
+two-branch heuristic for 52 model inferences again. The stub provider is the one
+configuration where no model answer is the expected outcome, so it is flagged
+but exits 0.
 """
 import json
 import os
@@ -18,6 +26,9 @@ from trust.decision_log import DecisionLog
 from trust.gateway import GateViolation, call_model, load_config
 
 STAGE = "S4_semantics"
+# Exit code for "ran, wrote the artifact, but no model answered a single column".
+# Distinct from 1 (crash) so the orchestrator can tell the two apart.
+DEGRADED_EXIT = 3
 LEVELS = ("high", "medium", "low")
 STATUSES = ("inferred", "assumed", "uncertain")
 CLASSES = ("measured", "manipulated", "undetermined")
@@ -136,6 +147,12 @@ class SemanticEngine:
             return None, f"gate refused the payload for {col_id}: {exc}"
         except OSError as exc:
             return None, f"model endpoint unreachable ({exc})"
+        except (ValueError, KeyError) as exc:
+            # A missing API key or an unknown provider is raised by the gateway
+            # as ValueError; a malformed provider response as KeyError. Neither
+            # is a bug in this stage, and neither will fix itself on the next
+            # column: treat it as "no model", not as a crash.
+            return None, f"model not usable ({exc})"
         if isinstance(answer, dict) and answer.get("_stub"):
             return None, "provider is 'stub', which returns no role"
         entry = interpret(answer, allowed_ids, guess)
@@ -155,6 +172,7 @@ class SemanticEngine:
         semantics_output = {}
         use_model = True
         from_model = 0
+        stop_reason = None
 
         for col_id, profile in profiles.items():
             is_leader = col_id in leaders
@@ -169,6 +187,7 @@ class SemanticEngine:
                 entry, reason = self._ask_model(col_id, payload, allowed_ids, guess)
                 if reason:
                     use_model = False
+                    stop_reason = reason
                     print(f"[S4] No model for the remaining columns: {reason}")
                     self.log.append(stage=STAGE, kind="flag",
                                     summary=f"Model not used from {col_id} onward: {reason}. "
@@ -202,12 +221,43 @@ class SemanticEngine:
                 epistemic_status=entry["epistemic_status"],
             )
 
+        total = len(semantics_output)
+        degraded = from_model == 0 and total > 0
+        if degraded:
+            # Top-level marker, deliberately not a column entry: every reader
+            # already keeps only col_* keys (or dict values), and the schema
+            # names this field explicitly.
+            semantics_output["degraded"] = True
+
         with open(os.path.join(self.artifacts_dir, 'semantics.json'), 'w') as f:
             json.dump(semantics_output, f, indent=2)
 
         print(f"[S4] Semantic Inference complete. semantics.json generated "
-              f"({from_model}/{len(semantics_output)} columns answered by the model).")
+              f"({from_model}/{total} columns answered by the model).")
+
+        if not degraded:
+            return 0
+
+        reason = stop_reason or "the model returned no usable answer for any column"
+        self.log.append(
+            stage=STAGE, kind="config_change",
+            summary=(f"S4 ran DEGRADED: {self._actor()} answered 0 of {total} columns "
+                     f"({reason}). Every role in semantics.json is the two-branch "
+                     f"statistical pre-analysis, not a model inference; its confidences "
+                     f"describe that heuristic, not a model's certainty."),
+            context={"degraded": True, "provider": self.llm_config["llm"]["provider"],
+                     "model": self.llm_config["llm"]["model"], "reason": reason,
+                     "columns_total": total, "columns_from_model": 0},
+        )
+        print(f"[S4] DEGRADED: no model answered any column ({reason}). "
+              f"semantics.json is marked degraded and this is in the decision log.",
+              file=sys.stderr)
+        if self.llm_config["llm"]["provider"] == "stub":
+            # The stub exists so a stage can be exercised with no model at all;
+            # a degraded result is what it is for. Flagged, not failed.
+            return 0
+        return DEGRADED_EXIT
 
 
 if __name__ == "__main__":
-    SemanticEngine().run()
+    sys.exit(SemanticEngine().run())

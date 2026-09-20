@@ -49,12 +49,25 @@ def clear_scored_runs():
     if removed:
         print(f"Cleared {removed} previously scored run(s) from {SCORED_DIR.relative_to(ROOT)}")
 
+# Exit code S4 and S7 use for "the artifact was written, but no model answered".
+# The stage is not broken and its output is usable downstream, so the pipeline
+# goes on -- but it must not end with a green banner and exit 0, which is how a
+# two-branch heuristic passed for 52 model inferences for hours.
+DEGRADED_EXIT = 3
+_degraded_stages = []
+
+
 def run_stage(name, command):
     print(f"\n{'='*60}\n🚀 Launching {name}...\n{'='*60}")
     # We use subprocess.Popen to stream the output in real-time
     process = subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr)
     process.wait()
-    
+
+    if process.returncode == DEGRADED_EXIT:
+        _degraded_stages.append(name)
+        print(f"\n⚠️  {name} completed DEGRADED: no model answered. Its artifact is "
+              f"marked degraded and the run will not report success.")
+        return
     if process.returncode != 0:
         print(f"\n❌ ERROR: {name} failed with exit code {process.returncode}.")
         print("Aborting the rest of the pipeline.")
@@ -105,9 +118,18 @@ def main():
     for name, cmd in stages:
         run_stage(name, cmd)
 
-    print(f"\n{'='*60}\n🎉 ENTIRE PIPELINE COMPLETED SUCCESSFULLY! 🎉\n{'='*60}")
-    print("All JSON artifacts have been safely generated in the artifacts/ folder.")
-    
+    if _degraded_stages:
+        print(f"\n{'='*60}\n⚠️  PIPELINE FINISHED DEGRADED — NO MODEL ANSWERED\n{'='*60}")
+        for name in _degraded_stages:
+            print(f"  - {name}")
+        print("Every artifact was written, but the roles and the narrative come from the\n"
+              "statistical fallback only. Check config/llm.yaml (provider, model, the\n"
+              "environment variable named in api_key_env) or that Ollama is running,\n"
+              "then re-run. The decision log has a config_change entry for each stage.")
+    else:
+        print(f"\n{'='*60}\n🎉 ENTIRE PIPELINE COMPLETED SUCCESSFULLY! 🎉\n{'='*60}")
+        print("All JSON artifacts have been safely generated in the artifacts/ folder.")
+
     if args.start_ui:
         print("\nStarting the Operator UI Server...")
         print("Navigate to http://localhost:8000/ui/ in your browser.")
@@ -115,6 +137,11 @@ def main():
             subprocess.run(f"{sys.executable} ui/server.py", shell=True)
         except KeyboardInterrupt:
             print("\nShutting down UI Server.")
+
+    # The UI is still started on a degraded run (an operator may want to look),
+    # but the process itself reports the degradation to whoever invoked it.
+    if _degraded_stages:
+        sys.exit(DEGRADED_EXIT)
 
 if __name__ == "__main__":
     main()

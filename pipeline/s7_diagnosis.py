@@ -4,7 +4,10 @@ The decisions are deterministic: the numbered chain, the critique checks, the re
 diagnose on untrusted data, and the confidence level. The model, through
 trust.gateway.call_model(), only writes a plain-language narrative and proposes alternative
 explanations. It is never asked when S5 refused the data, and if it is unavailable the
-diagnosis is complete without it.
+deterministic diagnosis is still written -- but marked "degraded": true, logged as a
+config_change, and the process exits with DEGRADED_EXIT (3), so a run without a model
+cannot pass for a run with one. Only --no-model (asked for) and the stub provider
+(built for exactly this) exit 0 without a narrative.
 
 Reads:  artifacts/drift_events.json, optional artifacts/dq_report.json, optional artifacts/semantics.json
 Writes: artifacts/diagnosis.json (a list with one diagnosis, the shape contracts/diagnosis.schema.json accepts)
@@ -22,6 +25,8 @@ from trust.decision_log import DecisionLog
 from trust.gateway import GateViolation, call_model, load_config
 
 STAGE = "S7_diagnosis"
+# Same convention as S4: the artifact was written, but no model took part.
+DEGRADED_EXIT = 3
 LEVELS = ["low", "medium", "high"]
 STATUSES = ("inferred", "assumed", "uncertain")
 MAX_ALTERNATIVES = 3
@@ -391,6 +396,10 @@ def request_narrative(result, event, roles, llm_config, log):
         return None, f"gate refused the payload: {exc}"
     except OSError as exc:
         return None, f"model endpoint unreachable ({exc})"
+    except (ValueError, KeyError) as exc:
+        # Missing API key / unknown provider (ValueError) or a malformed provider
+        # response (KeyError): "no model", not a crash of this stage.
+        return None, f"model not usable ({exc})"
     narrative = clean_narrative(answer)
     return narrative, None if narrative else "the model returned no usable narrative"
 
@@ -440,18 +449,30 @@ def main():
     result = diagnose(drift, event, gate, roles, DEFAULTS)
 
     narrative = None
+    degraded_reason = None
+    llm_config = None
     if result["fault_description"]["kind"] == "sensor_problem":
         print("[S7] Diagnosis refused on data quality grounds: the model is not asked to explain it.")
     elif not args.no_model:
-        narrative, reason = request_narrative(result, event, roles,
-                                              load_config(os.environ.get("LLM_CONFIG")), log)
+        llm_config = load_config(os.environ.get("LLM_CONFIG"))
+        narrative, reason = request_narrative(result, event, roles, llm_config, log)
         if reason:
+            degraded_reason = reason
             print(f"[S7] No model narrative: {reason}")
-            log.append(stage=STAGE, kind="flag",
-                       summary=f"No model narrative for {result['event_id']}: {reason}. "
-                               f"The deterministic diagnosis is complete without it.")
 
     entry = to_contract(result, narrative)
+    if degraded_reason:
+        # The model was supposed to take part and did not. The deterministic
+        # diagnosis stands, but the artifact says so and the run does not exit 0.
+        entry["degraded"] = True
+        llm = llm_config["llm"]
+        log.append(stage=STAGE, kind="config_change",
+                   summary=(f"S7 ran DEGRADED for {result['event_id']}: {llm['provider']}/"
+                            f"{llm['model']} produced no narrative ({degraded_reason}). "
+                            f"The diagnosis is the deterministic chain only; no model "
+                            f"explanation and no alternative explanations were obtained."),
+                   context={"degraded": True, "provider": llm["provider"],
+                            "model": llm["model"], "reason": degraded_reason})
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump([entry], f, indent=2)
@@ -468,6 +489,14 @@ def main():
           f"confidence {detail['level']} (weakest link: {detail['weakest_link']}) -> {args.out}")
     print(result["fault_description"]["summary"])
 
+    if degraded_reason:
+        print(f"[S7] DEGRADED: no model narrative ({degraded_reason}). "
+              f"diagnosis.json is marked degraded and this is in the decision log.",
+              file=sys.stderr)
+        if llm_config["llm"]["provider"] != "stub":
+            return DEGRADED_EXIT
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

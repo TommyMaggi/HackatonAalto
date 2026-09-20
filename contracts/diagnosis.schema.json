@@ -238,6 +238,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "degraded": {
+            "type": "boolean",
+            "description": "True when S7 asked the model for a narrative and got none (unreachable, no key, unusable answer). The deterministic chain is complete; the explanation is not. Added 20 Sep."
           }
         },
         "additionalProperties": true

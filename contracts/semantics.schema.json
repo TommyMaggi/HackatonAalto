@@ -131,6 +131,10 @@
               }
             }
           }
+        },
+        "degraded": {
+          "type": "boolean",
+          "description": "True when S4 ran but no model answered a single column, so every role is the statistical pre-analysis. Added 20 Sep so a total model failure cannot look like a successful run. Absent or false otherwise."
         }
       }
     },
@@ -181,7 +185,13 @@
           }
         }
       },
-      "title": "Semantics (Form B: shape emitted by the pipeline)"
+      "title": "Semantics (Form B: shape emitted by the pipeline)",
+      "properties": {
+        "degraded": {
+          "type": "boolean",
+          "description": "True when S4 ran but no model answered a single column, so every role is the statistical pre-analysis. Added 20 Sep so a total model failure cannot look like a successful run. Absent or false otherwise."
+        }
+      }
     }
   ]
 }
