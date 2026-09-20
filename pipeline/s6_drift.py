@@ -51,7 +51,12 @@ def load_runs(features_dir):
         sim_match = re.search(r"simulationRun=([\d.]+)", sim_dir)
         if not sim_match: continue
         sim = int(float(sim_match.group(1)))
-        df = pl.read_parquet(os.path.join(sim_dir, "*.parquet")).sort(TIME_COL)
+        # NOT sorted by TIME_COL: col_time resets to 1 at each sub-run boundary
+        # within a simulationRun partition, so a global sort by col_time
+        # interleaves all sub-runs together and destroys the very boundaries
+        # this function looks for below. The Parquet file's natural (ingestion)
+        # row order already keeps each sub-run's samples contiguous.
+        df = pl.read_parquet(os.path.join(sim_dir, "*.parquet"))
         cols = [c for c in df.columns if c not in (TIME_COL, "simulationRun")]
         if col_ids is None:
             col_ids = cols

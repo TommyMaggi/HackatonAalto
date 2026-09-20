@@ -54,11 +54,17 @@ class DecisionLog:
         epistemic_status: str | None = None,
         model_call: dict[str, Any] | None = None,
         override: dict[str, Any] | None = None,
+        cites: Iterable[str] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Write one entry. Returns its entry_id.
 
         `kind` is one of: inference, check, flag, diagnosis, model_call,
-        human_review, override, config_change.
+        human_review, override, config_change, qa, hypothesis, context_write.
+
+        `subject` is column ids and nothing else -- that is what makes the log
+        filterable by channel. Anything else an entry is about (a run, an event,
+        a machine) goes in `context`, which is why that field exists.
         """
         with _LOCK:
             entry: dict[str, Any] = {
@@ -83,6 +89,10 @@ class DecisionLog:
                 entry["model_call"] = model_call
             if override:
                 entry["override"] = override
+            if cites:
+                entry["cites"] = list(cites)
+            if context:
+                entry["context"] = dict(context)
 
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")

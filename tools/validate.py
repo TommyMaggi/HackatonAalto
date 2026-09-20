@@ -50,6 +50,10 @@ MAP = {
 }
 JSONL = {"decision_log.jsonl": "decision_log_entry.schema.json"}
 
+# Artifacts that live one directory down, one file per unit. Matched by suffix
+# because the stem is the unit's name and there is no fixed list of units.
+NESTED = [("artifacts/machine_context", ".state.json", "unit_state.schema.json")]
+
 GREEN, RED, YELLOW, DIM, OFF = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
 
@@ -148,6 +152,18 @@ def validate_file(path: Path) -> tuple[bool, list[str]]:
                 errors.append(f"line {i} at {loc}: {err.message}")
         return not errors, errors
 
+    for _folder, suffix, schema_name in NESTED:
+        if name.endswith(suffix):
+            try:
+                doc = json.loads(path.read_text())
+            except json.JSONDecodeError as e:
+                return False, [f"not valid JSON: {e}"]
+            v = _validator(schema_name)
+            for err in v.iter_errors(doc):
+                loc = "/".join(str(p) for p in err.absolute_path) or "(root)"
+                errors.append(f"at {loc}: {err.message}")
+            return not errors, errors
+
     if name not in MAP:
         return True, []
 
@@ -185,6 +201,9 @@ def main() -> int:
     else:
         d = ROOT / ("artifacts/examples" if args.examples else "artifacts")
         targets = sorted(p for p in d.glob("*") if p.name in MAP or p.name in JSONL)
+        if not args.examples:
+            for folder, suffix, _schema in NESTED:
+                targets += sorted((ROOT / folder).glob("*" + suffix))
 
     if not targets:
         print(f"{YELLOW}no artifacts found yet — nothing to validate{OFF}")

@@ -164,6 +164,105 @@
         "additionalProperties": true
       },
       "title": "DriftEvents (Form B: shape emitted by the pipeline)"
+    },
+    {
+      "type": "object",
+      "title": "DriftEvents (Form C: shape emitted by pipeline/s6_drift.py, the PCA T2/SPE detector)",
+      "description": "One scored run: the reference PCA model, its control limits, the alarm spans found in this run, the full score series, and the evidence objects the events cite. select_drift_events.py picks one scored run from artifacts/drift_events/*.json (per-run files S6 writes when run without --run-id) and copies it here.",
+      "additionalProperties": true,
+      "required": [
+        "batch",
+        "events"
+      ],
+      "properties": {
+        "batch": {
+          "type": "object",
+          "properties": {
+            "batch_id": { "type": "string" },
+            "run_id": { "type": "string" },
+            "n_samples": { "type": "integer" },
+            "first_sample": { "type": "integer" },
+            "last_sample": { "type": "integer" }
+          }
+        },
+        "detector": {
+          "type": "object",
+          "properties": {
+            "family": { "type": "string" },
+            "parameters": { "type": "object" },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "t2": { "type": "number" },
+                "spe": { "type": "number" }
+              }
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "event_id",
+              "start_sample",
+              "severity",
+              "ranked_signals",
+              "evidence_ids"
+            ],
+            "properties": {
+              "event_id": { "type": "string" },
+              "start_sample": { "type": "integer" },
+              "detected_at_sample": { "type": "integer" },
+              "end_sample": { "type": ["integer", "null"] },
+              "severity": { "enum": ["low", "medium", "high"] },
+              "type": { "enum": ["abrupt", "gradual", "unclassified"] },
+              "statistic": { "enum": ["t2", "spe"] },
+              "ranked_signals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "col_id": { "type": "string", "pattern": "^col_[0-9]{3}$" },
+                    "share": { "type": "number" },
+                    "direction": { "type": "string" }
+                  }
+                }
+              },
+              "evidence_ids": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "score_series": {
+          "type": "object",
+          "properties": {
+            "sample": { "type": "array" },
+            "t2": { "type": "array" },
+            "spe": { "type": "array" },
+            "limit_t2": { "type": "number" },
+            "limit_spe": { "type": "number" }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidence_id": { "type": "string" },
+              "stage": { "type": "string" },
+              "kind": { "type": "string" },
+              "subject": { "type": "array" },
+              "value": { "type": "object" },
+              "computed_at": { "type": "string" },
+              "method": { "type": "string" }
+            }
+          }
+        }
+      }
     }
   ]
 }

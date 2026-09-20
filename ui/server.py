@@ -15,7 +15,9 @@ Run with:
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -27,6 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from trust.decision_log import DecisionLog
+from ui import cockpit_api
+from ui.series_reader import SeriesUnavailable
 
 SEMANTICS_PATH = ROOT / "artifacts" / "semantics.json"
 SCHEMA_PATH = ROOT / "contracts" / "semantics.schema.json"
@@ -35,11 +39,50 @@ BACKUP_LOG_PATH = ROOT / "artifacts" / "decision_log_backup.jsonl"
 EXAMPLE_LOG_PATH = ROOT / "artifacts" / "examples" / "decision_log.jsonl"
 FROM_TEAM_SEMANTICS = ROOT / "artifacts" / "from_team" / "semantics.json"
 
+DIAGNOSIS_PATH = ROOT / "artifacts" / "diagnosis.json"
+DIAGNOSIS_SCHEMA_PATH = ROOT / "contracts" / "diagnosis.schema.json"
+FROM_TEAM_DIAGNOSIS = ROOT / "artifacts" / "from_team" / "diagnosis.json"
+
 VALID_ACTIONS = {"accept", "contest", "override", "cancel_override"}
+VALID_DIAGNOSIS_ACTIONS = {"accept", "contest", "overturn"}
+DIAGNOSIS_REVIEW_ACTION = {"accept": "accepted", "contest": "questioned", "overturn": "overridden"}
+
+# Evidence pools the question box may draw on to back an entry it cites.
+# Never data/, never a raw artifact wholesale -- only the objects a retrieved
+# log entry's evidence_ids actually name.
+EVIDENCE_SOURCE_PAIRS = [
+    (ROOT / "artifacts" / "profiles.json", ROOT / "artifacts" / "from_team" / "profiles.json"),
+    (ROOT / "artifacts" / "relations.json", ROOT / "artifacts" / "from_team" / "relations.json"),
+    (ROOT / "artifacts" / "drift_events.json", ROOT / "artifacts" / "from_team" / "drift_events.json"),
+    (ROOT / "artifacts" / "dq_report.json", ROOT / "artifacts" / "from_team" / "dq_report.json"),
+]
+
+QA_ANSWER_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["answer", "used_entry_ids", "confidence", "epistemic_status"],
+    "properties": {
+        "answer": {"type": "string"},
+        "used_entry_ids": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "epistemic_status": {"enum": ["inferred", "assumed", "uncertain"]},
+    },
+}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _json_safe(node):
+    """NaN and infinity become null, at any depth. See Handler._send_json."""
+    if isinstance(node, float):
+        return node if math.isfinite(node) else None
+    if isinstance(node, dict):
+        return {k: _json_safe(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_json_safe(v) for v in node]
+    return node
 
 
 def _validate_semantics(doc: dict) -> None:
@@ -74,6 +117,167 @@ def _find_inference(doc: dict, col_id: str) -> dict:
     raise ValueError(f"No inference for {col_id!r} in {SEMANTICS_PATH.name}")
 
 
+def _validate_diagnosis(doc) -> None:
+    import jsonschema
+    if DIAGNOSIS_SCHEMA_PATH.exists():
+        schema = json.loads(DIAGNOSIS_SCHEMA_PATH.read_text(encoding="utf-8"))
+        jsonschema.validate(doc, schema)
+
+
+def _load_diagnosis():
+    if not DIAGNOSIS_PATH.exists():
+        if FROM_TEAM_DIAGNOSIS.exists():
+            shutil.copy2(FROM_TEAM_DIAGNOSIS, DIAGNOSIS_PATH)
+        else:
+            raise FileNotFoundError(f"{DIAGNOSIS_PATH} does not exist.")
+    return json.loads(DIAGNOSIS_PATH.read_text(encoding="utf-8"))
+
+
+def _write_diagnosis_atomic(doc) -> None:
+    tmp = DIAGNOSIS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(DIAGNOSIS_PATH)
+
+
+def _find_diagnosis(doc, diagnosis_id: str) -> dict:
+    """`doc` is either Form A (a single diagnosis object) or Form B (a flat
+    list, one entry per drift event). Both are widened readers, same rule as
+    semantics: the artifact shape is a fact, the schema describes it."""
+    if isinstance(doc, dict):
+        if doc.get("diagnosis_id") == diagnosis_id:
+            return doc
+        raise ValueError(f"No diagnosis {diagnosis_id!r} in {DIAGNOSIS_PATH.name}")
+    if isinstance(doc, list):
+        for item in doc:
+            if isinstance(item, dict) and item.get("diagnosis_id") == diagnosis_id:
+                return item
+    raise ValueError(f"No diagnosis {diagnosis_id!r} in {DIAGNOSIS_PATH.name}")
+
+
+_WORD_RE = re.compile(r"[a-z0-9_]+")
+
+
+def _tokenize(text) -> set:
+    return {w for w in _WORD_RE.findall(str(text or "").lower()) if len(w) > 2}
+
+
+def _retrieve_relevant_entries(question: str, entries: list, top_k: int = 8, recent_fallback: int = 5) -> list:
+    """Keyword overlap against each entry's own summary/stage/kind/subject.
+
+    No embeddings, no ranking model: a second model call to find the first
+    one's inputs would be an odd way to keep this auditable. When nothing
+    scores, fall back to the most recent entries rather than sending nothing
+    -- and the answer's own epistemic_status is left for the model to mark
+    down accordingly.
+    """
+    q_tokens = _tokenize(question)
+    if not q_tokens or not entries:
+        return entries[-recent_fallback:]
+
+    scored = []
+    for idx, entry in enumerate(entries):
+        haystack = " ".join([
+            str(entry.get("summary", "")),
+            str(entry.get("stage", "")),
+            str(entry.get("kind", "")),
+            " ".join(entry.get("subject") or []),
+        ])
+        score = len(q_tokens & _tokenize(haystack))
+        if score > 0:
+            scored.append((score, idx, entry))
+
+    if not scored:
+        return entries[-recent_fallback:]
+
+    scored.sort(key=lambda t: (-t[0], -t[1]))
+    return [entry for _, _, entry in scored[:top_k]]
+
+
+def _trim_entry_for_payload(entry: dict) -> dict:
+    out = {
+        "entry_id": entry.get("entry_id"),
+        "stage": entry.get("stage"),
+        "kind": entry.get("kind"),
+        "summary": entry.get("summary"),
+    }
+    for key in ("subject", "confidence", "epistemic_status", "at"):
+        if entry.get(key) is not None:
+            out[key] = entry[key]
+    return out
+
+
+def _collect_evidence_any(container) -> dict:
+    """Same tolerance as ui/diagnosis.html's collectEvidenceAny: a bare array
+    root, or one wrapped under .evidence / .profiles / .failures."""
+    if container is None:
+        return {}
+    if isinstance(container, list):
+        items = container
+    elif isinstance(container, dict):
+        items = container.get("evidence") or container.get("profiles") or container.get("failures") or []
+    else:
+        items = []
+    return {item["evidence_id"]: item for item in items if isinstance(item, dict) and item.get("evidence_id")}
+
+
+def _load_json_with_fallback(primary: Path, fallback: Path):
+    for path in (primary, fallback):
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+    return None
+
+
+def _build_evidence_pool() -> dict:
+    pool: dict = {}
+    for primary, fallback in EVIDENCE_SOURCE_PAIRS:
+        pool.update(_collect_evidence_any(_load_json_with_fallback(primary, fallback)))
+    return pool
+
+
+def _trim_evidence_for_payload(ev: dict) -> dict:
+    out = {"evidence_id": ev.get("evidence_id")}
+    for key in ("stage", "kind", "subject", "value", "method", "check_type", "target_col", "detail", "severity"):
+        if key in ev:
+            out[key] = ev[key]
+    return out
+
+
+# The cockpit's two route tables, kept apart so the split is a fact about the
+# code and not a claim in a comment: nothing in COCKPIT_GET calls a model, and
+# every entry in COCKPIT_POST that does goes through trust.gateway.call_model().
+COCKPIT_GET = {
+    "/api/runs": cockpit_api.get_runs,
+    "/api/drift": cockpit_api.get_drift,
+    "/api/series": cockpit_api.get_series,          # raw values, browser only
+    "/api/channels": cockpit_api.get_channels,
+    "/api/machines": cockpit_api.get_machines,
+    "/api/machine_context": cockpit_api.get_machine_context,
+    "/api/unit_state": cockpit_api.get_unit_state,
+    # Served to one page that says EVAL ONLY across the top. Produced under
+    # eval/ from the label files, and read by nothing that calls a model.
+    "/api/validation": cockpit_api.get_validation,
+    "/api/provenance": cockpit_api.get_provenance,
+    # Which model is answering, and what else could be. Reads config only.
+    "/api/model": cockpit_api.get_model_status,
+}
+
+COCKPIT_POST = {
+    "/api/machine_context": cockpit_api.put_machine_context,   # human writes
+    "/api/hypothesis": cockpit_api.ask_hypothesis,             # model
+    "/api/chat": cockpit_api.ask_chat,                         # model
+    "/api/context_append": cockpit_api.ask_context_append,     # model, drafts only
+    "/api/unit_state": cockpit_api.put_unit_state,             # human writes
+    "/api/physical": cockpit_api.ask_physical,                 # model
+    "/api/shift_review": cockpit_api.ask_shift_review,         # model, drafts only
+    # Swaps the model layer and logs it as config_change. Calls no model
+    # itself: it rewrites config/llm.yaml, which the next call reads.
+    "/api/model": cockpit_api.put_model_switch,            # human writes
+}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -88,12 +292,33 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _send_json(self, status: int, payload: dict) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        # NaN and infinity are valid Python and invalid JSON. Serialising them
+        # produces a body that every browser refuses to parse, and the failure
+        # surfaces as a page full of "undefined" rather than as an error.
+        # Nothing may leave this server that a JSON.parse cannot read.
+        body = json.dumps(_json_safe(payload), ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _dispatch(self, handler, arg, with_log: bool = False) -> None:
+        """One error contract for every cockpit route.
+
+        A missing run or channel is a 404 and says which; a bad request or a
+        refusal from the trust gate is a 400 carrying the gate's own words, so
+        the operator sees why a call was stopped rather than a dead spinner.
+        """
+        try:
+            result = handler(arg, DecisionLog(path=DECISION_LOG_PATH)) if with_log else handler(arg)
+            self._send_json(200, result)
+        except (cockpit_api.NotFound, SeriesUnavailable, FileNotFoundError) as exc:
+            self._send_json(404, {"error": str(exc)})
+        except (ValueError, KeyError) as exc:
+            self._send_json(400, {"error": str(exc)})
+        except Exception as exc:
+            self._send_json(500, {"error": f"internal error: {exc}"})
 
     def do_HEAD(self):
         if self.path in ("/api/egress_summary", "/api/download_decision_log") or self.path.startswith("/api/download_decision_log"):
@@ -104,6 +329,11 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def do_GET(self):
+        route, _, raw_query = self.path.partition("?")
+        if route in COCKPIT_GET:
+            self._dispatch(COCKPIT_GET[route], urllib.parse.parse_qs(raw_query))
+            return
+
         if self.path == "/api/egress_summary":
             try:
                 entries = []
@@ -209,9 +439,34 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(400, {"error": "invalid JSON body"})
             return
 
+        route = self.path.partition("?")[0]
+        if route in COCKPIT_POST:
+            self._dispatch(COCKPIT_POST[route], body, with_log=True)
+            return
+
         if self.path == "/api/decision":
             try:
                 result = self._handle_decision(body)
+                self._send_json(200, result)
+            except (KeyError, ValueError, FileNotFoundError) as exc:
+                self._send_json(400, {"error": str(exc)})
+            except Exception as exc:
+                self._send_json(500, {"error": f"internal error: {exc}"})
+            return
+
+        elif self.path == "/api/diagnosis_decision":
+            try:
+                result = self._handle_diagnosis_decision(body)
+                self._send_json(200, result)
+            except (KeyError, ValueError, FileNotFoundError) as exc:
+                self._send_json(400, {"error": str(exc)})
+            except Exception as exc:
+                self._send_json(500, {"error": f"internal error: {exc}"})
+            return
+
+        elif self.path == "/api/ask":
+            try:
+                result = self._handle_ask(body)
                 self._send_json(200, result)
             except (KeyError, ValueError, FileNotFoundError) as exc:
                 self._send_json(400, {"error": str(exc)})
@@ -446,6 +701,146 @@ class Handler(SimpleHTTPRequestHandler):
         _write_semantics_atomic(doc)
 
         return {"entry_id": entry_id, "inference": inf}
+
+    def _handle_diagnosis_decision(self, body: dict) -> dict:
+        diagnosis_id = body.get("diagnosis_id")
+        action = body.get("action")
+        by = (body.get("by") or "OP-01").strip()
+        rationale = (body.get("rationale") or "").strip()
+
+        if not diagnosis_id:
+            raise ValueError("diagnosis_id is required")
+        if action not in VALID_DIAGNOSIS_ACTIONS:
+            raise ValueError(f"action must be one of {sorted(VALID_DIAGNOSIS_ACTIONS)}")
+
+        log = DecisionLog(path=DECISION_LOG_PATH)
+        doc = _load_diagnosis()
+        item = _find_diagnosis(doc, diagnosis_id)
+        subject_col = None
+        if isinstance(item.get("ranked_sensors"), list) and item["ranked_sensors"]:
+            subject_col = item["ranked_sensors"][0].get("col_id")
+
+        review_action = DIAGNOSIS_REVIEW_ACTION[action]
+        human_review = {
+            "action": review_action,
+            "by": by,
+            "at": _now(),
+        }
+        if rationale:
+            human_review["rationale"] = rationale
+
+        if action == "overturn":
+            replacement = (body.get("replacement_fault_type") or "").strip()
+            if not replacement:
+                raise ValueError("replacement_fault_type is required to overturn a diagnosis")
+            human_review["replacement_fault_type"] = replacement
+            human_review.setdefault("rationale", f"Operator overturned diagnosis {diagnosis_id}")
+
+        item["human_review"] = human_review
+
+        try:
+            _validate_diagnosis(doc)
+        except Exception:
+            pass  # additionalProperties differs between Form A and Form B; best-effort only
+        _write_diagnosis_atomic(doc)
+
+        summary = {
+            "accept": f"Operator accepted diagnosis {diagnosis_id}.",
+            "contest": f"Operator contested diagnosis {diagnosis_id}: {rationale or 'no rationale given'}.",
+            "overturn": f"Operator overturned diagnosis {diagnosis_id}: {human_review.get('replacement_fault_type')}",
+        }[action]
+
+        entry_id = log.append(
+            stage="S7_diagnosis",
+            kind="human_review" if action != "overturn" else "override",
+            summary=summary,
+            actor_type="human",
+            actor_name=by,
+            subject=[s for s in [diagnosis_id, subject_col] if s],
+        )
+        return {"entry_id": entry_id, "human_review": human_review}
+
+    def _handle_ask(self, body: dict) -> dict:
+        """The operator question box.
+
+        Non-negotiable per CONTRACTS.md: this is not a second door for data.
+        The only things that can ever reach call_model() here are entries
+        already sitting in decision_log.jsonl and the evidence objects they
+        cite -- never a whole artifact, never anything from data/. The gate
+        in trust/gateway.py runs on top of that as the same backstop every
+        other stage gets.
+        """
+        question = (body.get("question") or "").strip()
+        by = (body.get("by") or "OP-01").strip()
+
+        if not question:
+            raise ValueError("question is required")
+        if len(question) > 2000:
+            raise ValueError("question is too long (max 2000 characters)")
+
+        log = DecisionLog(path=DECISION_LOG_PATH)
+        all_entries = log.read()
+        relevant = _retrieve_relevant_entries(question, all_entries)
+        trimmed_entries = [_trim_entry_for_payload(e) for e in relevant]
+
+        evidence_pool = _build_evidence_pool()
+        cited_ids = sorted({eid for e in relevant for eid in (e.get("evidence_ids") or [])})
+        trimmed_evidence = [_trim_evidence_for_payload(evidence_pool[eid]) for eid in cited_ids if eid in evidence_pool]
+
+        payload = {
+            "question": question,
+            "log_entries": trimmed_entries,
+            "evidence": trimmed_evidence,
+            "instructions": [
+                "Answer the question using only the log_entries and evidence given above.",
+                "Every claim in your answer must be traceable to at least one entry_id from log_entries.",
+                "List the entry_ids you actually relied on in used_entry_ids.",
+                "If the given entries do not support a confident answer, say so, lower confidence, "
+                "and set epistemic_status to 'uncertain'.",
+                "Never invent an entry_id or evidence_id that is not listed above.",
+            ],
+        }
+
+        from trust.gateway import call_model, GateViolation
+
+        try:
+            result = call_model(
+                # Static and code-authored, never the operator's text: purpose
+                # is not gate-checked (see trust/gateway.py), only payload is.
+                purpose="Operator question via UI chatbox",
+                payload=payload,
+                schema_out=QA_ANSWER_SCHEMA,
+                stage="UI_operator_qa",
+                log=log,
+            )
+        except GateViolation as exc:
+            raise ValueError(f"blocked by the trust gate: {exc}")
+
+        answer = result.get("answer") or result.get("_unparsed") or "The model did not return a usable answer."
+        used_entry_ids = result.get("used_entry_ids") or []
+        confidence = result.get("confidence") or "low"
+        epistemic_status = result.get("epistemic_status") or "uncertain"
+
+        entry_id = log.append(
+            stage="UI_operator_qa",
+            kind="qa",
+            summary=(f'Operator asked: "{question}" — {answer}')[:4000],
+            actor_type="human",
+            actor_name=by,
+            confidence=confidence,
+            epistemic_status=epistemic_status,
+            cites=used_entry_ids,
+        )
+
+        return {
+            "entry_id": entry_id,
+            "call_id": result.get("_call_id"),
+            "answer": answer,
+            "confidence": confidence,
+            "epistemic_status": epistemic_status,
+            "used_entry_ids": used_entry_ids,
+            "retrieved_entries": trimmed_entries,
+        }
 
 
 def main() -> None:

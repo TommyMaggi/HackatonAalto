@@ -12,7 +12,11 @@ setup:
 	@echo "→ creating virtualenv in $(VENV)"
 	@$(PY) -m venv $(VENV)
 	@$(VPY) -m pip install -q --upgrade pip
-	@$(VPY) -m pip install -q jsonschema pyyaml duckdb
+	@echo "→ installing dependencies"
+	# Every package here is imported somewhere in the tree. polars and pandas
+	# were missing and a fresh clone could not start the UI: series_reader.py
+	# imports polars, s3_relations.py imports pandas.
+	@$(VPY) -m pip install -q jsonschema pyyaml duckdb polars pandas numpy pyarrow
 	@mkdir -p artifacts
 	@cp -n artifacts/examples/*.json artifacts/ 2>/dev/null || true
 	@cp -n artifacts/examples/decision_log.jsonl artifacts/ 2>/dev/null || true

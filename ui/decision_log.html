@@ -523,6 +523,87 @@
     border-color: var(--text);
   }
 
+  /* Operator question box: a natural-language reader over the log above,
+     never a second path to the model. */
+  .qa-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-subtle);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .qa-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+  }
+  .qa-subtitle {
+    font-size: 0.74rem;
+    color: var(--text-subtle);
+    margin-bottom: 0.75rem;
+  }
+  .qa-input-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .qa-input-row input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--border-dark);
+    border-radius: 5px;
+    outline: none;
+    color: var(--text);
+  }
+  .qa-input-row input:focus { border-color: var(--text); }
+  .qa-ask-btn {
+    padding: 0.5rem 1.1rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 5px;
+    border: 1px solid var(--text);
+    background: var(--text);
+    color: #fff;
+    cursor: pointer;
+  }
+  .qa-ask-btn:disabled { opacity: 0.55; cursor: default; }
+  .qa-answer {
+    margin-top: 0.9rem;
+    padding: 0.85rem 1rem;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .qa-answer.error { border-color: var(--red-border); background: var(--red-bg); color: var(--red); }
+  .qa-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+  .qa-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-muted);
+    border: 1px solid var(--border-dark);
+    border-radius: 999px;
+    padding: 0.14rem 0.6rem;
+    font-size: 0.72rem;
+    color: var(--text);
+    cursor: help;
+  }
+  .qa-egress-note {
+    font-size: 0.7rem;
+    color: var(--text-subtle);
+    margin-top: 0.5rem;
+  }
+
   /* PRINT MEDIA STYLES: Crisp PDF Snapshot */
   @media print {
     body {
@@ -535,7 +616,7 @@
       border-bottom: 2px solid #000;
       margin-bottom: 1rem;
     }
-    .view-slider, .toolbar, .btn, .operator-id-badge, .modal-backdrop, .notify-bar {
+    .view-slider, .toolbar, .btn, .operator-id-badge, .modal-backdrop, .notify-bar, .qa-panel {
       display: none !important;
     }
     .egress-strip {
@@ -572,9 +653,17 @@
 
   <!-- Sliding Segmented View Nav -->
   <nav class="view-slider">
+    <a href="cockpit.html" class="slider-tab">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+      Cockpit
+    </a>
     <a href="index.html" class="slider-tab">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       Sensor report
+    </a>
+    <a href="diagnosis.html" class="slider-tab">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Diagnosis
     </a>
     <a href="decision_log.html" class="slider-tab active">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -597,8 +686,8 @@
   <div class="egress-divider">·</div>
   <div class="egress-item"><b id="egress-bytes">0 KB</b> outbound data</div>
   
-  <div class="sovereignty-badge" title="Deliverable 8: Mathematical guarantee that no raw plant telemetry left local memory">
-    <span>✓ Data Sovereignty: 100% Local</span>
+  <div class="sovereignty-badge" title="Deliverable 8: Mathematical guarantee that no raw plant telemetry left local memory. This holds regardless of which model provider is configured -- external calls (see 'external calls' above) may still occur when an egress provider like google/openai/anthropic is selected in config/llm.yaml; only raw rows are guaranteed to stay local.">
+    <span>✓ Zero Raw-Data Egress</span>
   </div>
 </div>
 
@@ -657,6 +746,19 @@
       Clear log
     </button>
   </div>
+</div>
+
+<!-- Operator question box: a natural-language reader over the audit trail.
+     Every answer is grounded only in log entries + the evidence they cite,
+     sent through call_model() like any other stage, and logged again below. -->
+<div class="qa-panel">
+  <div class="qa-title">Ask about the audit trail</div>
+  <div class="qa-subtitle">Answers are grounded only in decision log entries and the evidence they cite — never raw data. Every answer cites the entries it used.</div>
+  <div class="qa-input-row">
+    <input type="text" id="qa-input" placeholder="e.g. Why was col_009 flagged? What did the operator override today?" onkeydown="if (event.key === 'Enter') askQuestion();">
+    <button class="qa-ask-btn" id="qa-ask-btn" onclick="askQuestion()">Ask</button>
+  </div>
+  <div id="qa-result"></div>
 </div>
 
 <!-- Table: Clean, NO 'Entry' column in main view -->
@@ -757,6 +859,71 @@ function initOperatorID() {
     const val = input.value.trim() || "OP-01";
     localStorage.setItem("norrin_operator_id", val);
   });
+}
+
+/* --- Operator question box --- */
+
+function escapeHtmlQA(str) {
+  if (str === null || str === undefined) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+const QA_CONFIDENCE_WORDS = {
+  high: "confident",
+  medium: "moderately confident",
+  low: "not very confident",
+};
+
+async function askQuestion() {
+  const input = document.getElementById("qa-input");
+  const btn = document.getElementById("qa-ask-btn");
+  const resultBox = document.getElementById("qa-result");
+  const question = input.value.trim();
+  if (!question) { input.focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = "Asking...";
+  resultBox.innerHTML = `<div class="qa-answer">Retrieving relevant log entries and asking the model...</div>`;
+
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, by: getOperatorID() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+
+    const confWord = QA_CONFIDENCE_WORDS[data.confidence] || data.confidence || "unknown confidence";
+    const citedEntries = (data.retrieved_entries || []).filter(
+      (e) => (data.used_entry_ids || []).includes(e.entry_id)
+    );
+    const chips = citedEntries.length
+      ? citedEntries.map((e) => `<span class="qa-chip mono" title="${escapeHtmlQA(e.summary)}">${escapeHtmlQA(e.entry_id)}</span>`).join(" ")
+      : `<span style="color: var(--text-subtle);">No specific entry was cited.</span>`;
+
+    resultBox.innerHTML = `
+      <div class="qa-answer">
+        ${escapeHtmlQA(data.answer)}
+        <div class="qa-meta">
+          <span>${escapeHtmlQA(confWord)}</span>
+          <span>·</span>
+          <span>${escapeHtmlQA(data.epistemic_status || "")}</span>
+          <span>·</span>
+          <span>sources:</span>
+          ${chips}
+        </div>
+      </div>
+      <div class="qa-egress-note">Logged as ${escapeHtmlQA(data.entry_id)} in the audit trail below.</div>
+    `;
+
+    await init(); // refresh the table so the new qa entry (and its model_call) show up
+  } catch (err) {
+    resultBox.innerHTML = `<div class="qa-answer error">${escapeHtmlQA(err.message || String(err))}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Ask";
+  }
 }
 
 function showNotification(text, type = "green") {

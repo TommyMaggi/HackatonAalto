@@ -11,9 +11,10 @@ team. Tienilo aperto accanto al terminale.
 
 | Persona | Su cosa |
 | --- | --- |
-| Giorgio | Adattabilità (secondo dominio), poi specializzare Ollama |
+| Giorgio |  specializzare Ollama poi adattare secondo dominio |
 | Manny | Installazione e configurazione di Ollama |
 | Ezequiel | Collegare S4 e S7 al gateway |
+|Zoe| fetch diretto features grafici
 | **Tu** | **UX, chiarezza del prodotto, e ciò che l'operatore vede** |
 
 Non toccare S4 né S7: ci sta lavorando Ezequiel. Se li modifichi anche tu,

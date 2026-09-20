@@ -159,14 +159,66 @@ def _api_key(cfg: dict) -> str:
     return key
 
 
+_TRANSIENT_HTTP_CODES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 4
+
+# Client-side pacing so a strict free-tier quota (e.g. 5 req/min) is respected
+# proactively instead of discovered via 429s. Keyed by provider name.
+_CALL_TIMES: dict[str, list[float]] = {}
+
+
+def _throttle(provider_name: str, per_minute: int | None) -> None:
+    if not per_minute:
+        return
+    window = _CALL_TIMES.setdefault(provider_name, [])
+    now = time.time()
+    while window and now - window[0] > 60:
+        window.pop(0)
+    if len(window) >= per_minute:
+        time.sleep(max(0.0, 60.0 - (now - window[0]) + 0.5))
+    window.append(time.time())
+
+
+def _retry_delay_seconds(exc, attempt: int) -> float:
+    """Prefer the server's own retry hint over a guess."""
+    import re
+
+    retry_after = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
+    if retry_after:
+        try:
+            return float(retry_after)
+        except ValueError:
+            pass
+    try:
+        body = json.loads(exc.read())
+        for detail in body.get("error", {}).get("details", []):
+            if str(detail.get("@type", "")).endswith("RetryInfo"):
+                match = re.match(r"([\d.]+)s", str(detail.get("retryDelay", "")))
+                if match:
+                    return float(match.group(1))
+    except Exception:
+        pass
+    return float(2 ** attempt)
+
+
 def _post_json(url: str, body: dict, headers: dict, timeout: int) -> dict:
+    import urllib.error
     import urllib.request
-    req = urllib.request.Request(
-        url, data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", **headers},
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+
+    req_body = json.dumps(body).encode("utf-8")
+    for attempt in range(_MAX_RETRIES + 1):
+        req = urllib.request.Request(
+            url, data=req_body,
+            headers={"Content-Type": "application/json", **headers},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _TRANSIENT_HTTP_CODES or attempt == _MAX_RETRIES:
+                raise
+            time.sleep(_retry_delay_seconds(exc, attempt))
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _call_google(cfg: dict, prompt: str, schema_out: dict | None) -> str:
@@ -284,6 +336,8 @@ def call_model(
 
     prompt = _render_prompt(purpose, payload, schema_out)
 
+    _throttle(provider_name, llm_cfg.get("rate_limit_per_min"))
+
     _CALL_SEQ[0] += 1
     call_id = f"call_{_CALL_SEQ[0]:04d}"
     t0 = time.time()
@@ -294,6 +348,13 @@ def call_model(
         answer = json.loads(raw)
     except json.JSONDecodeError:
         answer = {"_unparsed": raw, "confidence": "low", "epistemic_status": "uncertain"}
+    if isinstance(answer, list) and len(answer) == 1 and isinstance(answer[0], dict):
+        # Some providers wrap a single-object answer in a list even when asked
+        # for an object. Unwrap the unambiguous case; anything else is honestly
+        # unparsed rather than guessed at.
+        answer = answer[0]
+    if not isinstance(answer, dict):
+        answer = {"_unparsed": answer, "confidence": "low", "epistemic_status": "uncertain"}
 
     log.append(
         stage=stage,
