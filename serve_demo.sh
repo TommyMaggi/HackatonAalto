@@ -19,11 +19,11 @@ if [ -f eval/validation_report.json ]; then
 fi
 
 echo "Starting demo_server.py on localhost:8002..."
-.venv/bin/python3 demo_server.py 8002 > server_demo.log 2>&1 &
+nohup .venv/bin/python3 demo_server.py 8002 > server_demo.log 2>&1 &
 echo $! > .demo_server.pid
 
 echo "Starting cloudflared quick tunnel..."
-cloudflared tunnel --url http://127.0.0.1:8002 > cloudflared_demo.log 2>&1 &
+nohup cloudflared tunnel --url http://127.0.0.1:8002 > cloudflared_demo.log 2>&1 &
 echo $! > .cloudflared.pid
 
 echo "Waiting for tunnel URL..."
