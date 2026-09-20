@@ -848,9 +848,11 @@ def main() -> None:
     # 8000 is what orchestrator.py --start-ui announces and what the docs say.
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     server = ThreadingHTTPServer(("localhost", port), Handler)
-    print(f"=== NORRIN OPERATOR COCKPIT V2 ===")
-    print(f"Serving on: http://localhost:{port}/ui_v2/ (or http://127.0.0.1:{port}/ui_v2/)")
-    print(f"Decision Log: http://localhost:{port}/ui_v2/decision_log.html")
+    print("=== NORRIN operator UI ===")
+    print(f"Sensor report: http://localhost:{port}/ui/")
+    print(f"Cockpit:       http://localhost:{port}/ui/cockpit.html")
+    print(f"Diagnosis:     http://localhost:{port}/ui/diagnosis.html")
+    print(f"Decision log:  http://localhost:{port}/ui/decision_log.html")
     print("Press Ctrl+C to stop the server.")
     try:
         server.serve_forever()

@@ -43,7 +43,7 @@ doctor:
 	@echo "examples:  $$(ls artifacts/examples/*.json 2>/dev/null | wc -l | tr -d ' ') file(s)"
 
 run:
-	$(RUNPY) -m pipeline.run --config config/llm.yaml
+	$(RUNPY) orchestrator.py --mode dev
 
 clean:
 	@rm -f artifacts/*.json artifacts/*.jsonl
