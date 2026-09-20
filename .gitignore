@@ -13,3 +13,7 @@ artifacts/*.jsonl
 artifacts/**/*.json
 artifacts/**/*.jsonl
 *.zip
+artifacts/snapshots/
+.demo_server.pid
+.cloudflared.pid
+*.log

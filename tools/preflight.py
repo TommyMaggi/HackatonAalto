@@ -222,9 +222,17 @@ def check_scale(est_rows: int) -> None:
                               f"capped to the most eventful 200.")
 
 
+# Every third-party module the pipeline imports, not a subset of them. pandas
+# and pyarrow were missing here, and the cost was exact: a prod run passed
+# preflight, spent four minutes in S1 rebuilding 2.3 GB of Parquet, and died in
+# S3 on `import pyarrow`. S1 and S2 survive without it because DuckDB and Polars
+# read Parquet themselves; S3 reads it through pandas, which cannot.
+_REQUIRED = ("duckdb", "polars", "pandas", "numpy", "pyarrow", "yaml", "jsonschema")
+
+
 def check_dependencies() -> None:
     missing = []
-    for module in ("duckdb", "polars", "numpy", "yaml", "jsonschema"):
+    for module in _REQUIRED:
         try:
             __import__(module)
         except ImportError:
@@ -232,7 +240,7 @@ def check_dependencies() -> None:
     if missing:
         fail("dependencies", f"missing: {', '.join(missing)}. Run: make setup")
     else:
-        ok("dependencies", "duckdb, polars, numpy, pyyaml, jsonschema all import")
+        ok("dependencies", f"{', '.join(_REQUIRED)} all import")
 
 
 def check_model(probe: bool) -> None:
@@ -276,6 +284,12 @@ def check_model(probe: bool) -> None:
         ok("model pacing", f"{rate} calls/min, so S4's {n_columns} columns take about "
                            f"{minutes(pace)}. The column count does not grow with the "
                            f"dataset, so the model cost is the same as a dev run.")
+    elif provider in ("local", "stub"):
+        # Pacing exists for hosted free-tier quotas. On a model running here
+        # there is no quota to respect, and throttling would only turn S4's
+        # column loop into a wait for nothing. Unset is the right answer.
+        ok("model pacing", f"off, correctly: {provider!r} has no quota to pace against, "
+                           f"so S4's {n_columns} columns run at the model's own speed")
     else:
         warn("model pacing", "no rate_limit_per_min set; a free-tier key will hit 429s")
 
