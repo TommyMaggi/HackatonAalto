@@ -422,6 +422,14 @@
   }
   .mini-btn:hover { background: var(--bg-muted); color: var(--text); }
 
+  /* Header model switch. The chip is the honest part: it says whether the
+     payload leaves the machine, and it is read from the server, not assumed. */
+  .model-row { display: flex; align-items: center; gap: 0.4rem; }
+  #model-select { max-width: 210px; }
+  #model-select:disabled { opacity: 0.6; cursor: wait; }
+  .chip.leaves { color: #96201f; background: var(--critical-bg); border-color: #f0b4b4; }
+  .chip.stays { color: #0a6b0a; background: var(--good-bg); border-color: #b3e3b3; }
+
   .tag {
     display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em;
     padding: 0.12rem 0.5rem; border-radius: 6px; border: 1px solid var(--border-dark);
@@ -496,6 +504,17 @@
     <div>
       <span class="id-label">OPERATOR</span>
       <input type="text" id="op-id" class="id-field mono" value="OP-01" spellcheck="false">
+    </div>
+    <!-- Deliverable 8, performed: which model answers, whether the payload
+         leaves this machine, and the switch. Options the server reports as not
+         ready are disabled with the reason. No key is ever typed here: the
+         server refuses one by design, so this control cannot even ask. -->
+    <div class="model-switch" id="model-switch">
+      <span class="id-label">MODEL</span>
+      <div class="model-row">
+        <select id="model-select" class="unit-select mono" title="Loading model status..."></select>
+        <span class="chip neutral" id="model-egress" title="">…</span>
+      </div>
     </div>
     <button class="ghost-btn" id="brain-btn" title="The notes this unit carries between shifts">Unit notes</button>
     <button class="ghost-btn" id="audit-btn" title="Column ids, evidence objects, and the exact payload sent to the model">Audit view</button>
@@ -2503,8 +2522,90 @@ function renderFingerprint() {
     : "The baseline these detections were scored against. If a colleague's fingerprint differs, you are not looking at the same detector.";
 }
 
+/* ---------------------------------------------------------------------------
+ * Model switch (Deliverable 8, performed rather than described).
+ *
+ * GET /api/model says which provider answers now, and for every registered
+ * provider whether it could be chosen and, if not, why. POST /api/model
+ * rewrites config/llm.yaml and logs a config_change; the next model call reads
+ * the new config. Nothing here holds a key, and the server refuses one anyway.
+ * ------------------------------------------------------------------------- */
+function renderModelStatus(st) {
+  var sel = $("model-select"), chip = $("model-egress");
+  var active = st.active || {};
+  var options = (st.options || []).slice().sort(function (a, b) {
+    // Safe choices first, then alphabetical: the operator should see "local"
+    // before a hosted API.
+    if (a.egress !== b.egress) return a.egress ? 1 : -1;
+    return a.provider < b.provider ? -1 : 1;
+  });
+  sel.innerHTML = options.map(function (o) {
+    var isActive = o.provider === active.provider;
+    var text = o.provider + (o.model ? " · " + o.model : "");
+    if (!o.ready && !isActive) text += " — " + (o.not_ready_because || "not ready");
+    var title = o.not_ready_because ? o.not_ready_because
+              : (o.egress ? "Hosted: the derived payload leaves this machine" : "Runs here: nothing leaves this machine");
+    return '<option value="' + esc(o.provider) + '"' +
+      (isActive ? ' selected' : '') +
+      (!o.ready && !isActive ? ' disabled' : '') +
+      ' title="' + esc(title) + '">' + esc(text) + '</option>';
+  }).join("");
+  sel.title = "Which model answers. Switching rewrites config/llm.yaml and is logged as config_change.";
+
+  var activeOpt = options.filter(function (o) { return o.provider === active.provider; })[0];
+  var leaves = active.egress;
+  chip.className = "chip " + (leaves ? "leaves" : "stays");
+  chip.textContent = leaves ? "leaves machine" : "stays here";
+  chip.title = leaves
+    ? "Every call to " + (active.provider || "?") + "/" + (active.model || "?") +
+      " sends the derived summaries off this machine. Each one is logged with its byte count."
+    : "Every call to " + (active.provider || "?") + "/" + (active.model || "?") +
+      " stays on this machine. The egress count in the Raw room stays at zero.";
+  if (activeOpt && !activeOpt.ready) {
+    chip.className = "chip low";
+    chip.textContent = "not answering";
+    chip.title = activeOpt.not_ready_because || "The active provider is not ready.";
+  }
+}
+
+async function loadModelStatus() {
+  try {
+    renderModelStatus(await getJSON("/api/model"));
+  } catch (err) {
+    $("model-select").innerHTML = '<option>unavailable</option>';
+    $("model-select").title = err.message;
+    $("model-egress").className = "chip neutral";
+    $("model-egress").textContent = "unknown";
+  }
+}
+
+async function switchModel(provider) {
+  var sel = $("model-select");
+  var previous = Array.prototype.filter.call(sel.options, function (o) { return o.defaultSelected; })[0];
+  sel.disabled = true;
+  try {
+    var st = await postJSON("/api/model", { provider: provider, by: operatorId() });
+    renderModelStatus(st);
+    var a = st.active || {};
+    toast("Model switched to " + a.provider + "/" + a.model + ". " +
+          (a.egress ? "Payloads now leave this machine — logged per call."
+                    : "Nothing leaves this machine from now on."));
+    // The Raw room counts what left; if it is showing, let it recount.
+    if (document.querySelector("#screen-raw.on")) renderProvenance();
+  } catch (err) {
+    toast(err.message, true);
+    if (previous) sel.value = previous.value;
+  } finally {
+    sel.disabled = false;
+  }
+}
+
 async function init() {
   $("op-id").value = localStorage.getItem("norrin_operator_id") || "OP-01";
+
+  // ---- model switch (header)
+  loadModelStatus();
+  $("model-select").addEventListener("change", function () { switchModel(this.value); });
   S.minutesPerSample = Number(localStorage.getItem(MINUTES_KEY)) || 3;
 
   $("op-id").addEventListener("input", function () { localStorage.setItem("norrin_operator_id", operatorId()); });
