@@ -10,7 +10,7 @@ class DataQualityEngine:
     # Supports standard and nested (Giorgio/S2) schema and profile formats.
     def __init__(
         self,
-        schema_path='contracts/schema.json',
+        schema_path='artifacts/schema.json',
         profiles_path='artifacts/profiles.json',
         decision_log_path='artifacts/decision_log.jsonl',
         variance_epsilon=1e-5,
@@ -164,17 +164,45 @@ class DataQualityEngine:
         rules_report = []
         if compiled_rules:
             for rule in compiled_rules:
-                checks_run += 1
                 r_id = rule.get('rule_id', 'UNKNOWN_RULE')
                 r_text = rule.get('raw_text', '')
                 r_col = rule.get('target_col')
                 fn = rule.get('executable')
-                
+
+                # A rule the compiler could not tie to a column is a question
+                # for the operator, not a fact about the data. It used to be
+                # evaluated anyway (its executable returns False), land in
+                # `failures` as a RULE_VIOLATION and pull the verdict down to
+                # DEGRADED -- so an unrecognised sentence made the data look
+                # bad. Reported, not counted.
+                if r_col is None or rule.get('status') == 'NEEDS_OPERATOR_INPUT':
+                    rules_report.append({
+                        'rule_id': r_id,
+                        'raw_text': r_text,
+                        'target_col': r_col,
+                        'status': 'NEEDS_OPERATOR_INPUT',
+                        'violating_samples_count': 0,
+                        'operator_prompt': rule.get('operator_prompt', ''),
+                    })
+                    continue
+
+                checks_run += 1
                 try:
                     passed = fn(data)
-                except Exception:
-                    passed = False
-                
+                except Exception as exc:
+                    # The rule could not be evaluated (column absent from this
+                    # batch, bad executable). That is our problem, not a
+                    # violation by the data: recorded as such, not as a failure.
+                    rules_report.append({
+                        'rule_id': r_id,
+                        'raw_text': r_text,
+                        'target_col': r_col,
+                        'status': 'NOT_EVALUATED',
+                        'violating_samples_count': 0,
+                        'detail': f'{type(exc).__name__}: {exc}',
+                    })
+                    continue
+
                 if passed:
                     checks_passed += 1
                     rules_report.append({

@@ -1,3 +1,4 @@
+import hashlib
 import re
 import json
 import os
@@ -11,7 +12,7 @@ _ROLE_STOPWORDS = {
 }
 
 class RuleCompiler:
-    def __init__(self, schema_path='contracts/schema.json',
+    def __init__(self, schema_path='artifacts/schema.json',
                  semantics_path='artifacts/semantics.json'):
         self.schema_path = schema_path
         self.semantics_path = semantics_path
@@ -107,7 +108,10 @@ class RuleCompiler:
 
     def compile_rule(self, rule_text, rule_id=None):
         if not rule_id:
-            rule_id = f'RULE_{abs(hash(rule_text)) % 10000:04d}'
+            # hash() is salted per process, so the same rule text got a new id
+            # on every run and its evidence ids never matched between runs.
+            digest = hashlib.sha1(rule_text.encode('utf-8')).hexdigest()
+            rule_id = f'RULE_{int(digest[:8], 16) % 10000:04d}'
         
         target_col = self.resolve_target_column(rule_text)
 
@@ -132,6 +136,24 @@ class RuleCompiler:
         text_lower = rule_text.lower()
         clean_text = re.sub(r'(col_\d{3}|xmeas_\d+|xmv_\d+)', '', rule_text, flags=re.IGNORECASE)
         numbers = [float(n) for n in re.findall(r'[-+]?\d*\.?\d+', clean_text)]
+
+        if not numbers:
+            # "col_009 must remain within operational limits" names a column
+            # but no limit. This used to compile to `col_009 <= 0.0` and fail on
+            # every batch, which then counted as a data violation. A rule
+            # without a number is a question for the operator, not a check.
+            return {
+                'rule_id': rule_id,
+                'raw_text': rule_text,
+                'target_col': target_col,
+                'status': 'NEEDS_OPERATOR_INPUT',
+                'condition': 'unresolved: no numeric limit in the rule text',
+                'operator_prompt': (
+                    f'What limit does this rule set for {target_col}? "{rule_text}" '
+                    f'contains no number to check against.'
+                ),
+                'executable': lambda data: False,
+            }
 
         if 'between' in text_lower and len(numbers) >= 2:
             low, high = min(numbers[0], numbers[1]), max(numbers[0], numbers[1])

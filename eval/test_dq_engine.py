@@ -16,11 +16,11 @@ class TestDataQualityEngine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.engine = DataQualityEngine(
-            schema_path='contracts/schema.json',
+            schema_path='artifacts/schema.json',
             profiles_path='artifacts/profiles.json',
             decision_log_path='artifacts/decision_log.jsonl'
         )
-        cls.compiler = RuleCompiler(schema_path='contracts/schema.json')
+        cls.compiler = RuleCompiler(schema_path='artifacts/schema.json')
 
     def _generate_synthetic_clean_batch(self, samples=20):
         # Generates clean data based on profiles.json (supporting nested statistics)
@@ -94,9 +94,17 @@ class TestDataQualityEngine(unittest.TestCase):
 
         rule_results = report['compiled_rules_evaluated']
         self.assertEqual(len(rule_results), 3)
-        self.assertEqual(rule_results[0]['status'], 'PASS')
+        # "Reactor pressure" can only resolve to a column through a hand-written
+        # mapping of this plant's variables, which was removed on purpose (it
+        # is the labelling the challenge forbids). With no inferred role matching
+        # the words, the honest outcome is a question for the operator, not PASS.
+        self.assertEqual(rule_results[0]['status'], 'NEEDS_OPERATOR_INPUT')
+        self.assertIsNone(rule_results[0]['target_col'])
         self.assertEqual(rule_results[1]['status'], 'PASS')
         self.assertEqual(rule_results[2]['status'], 'FAIL')
+        # An unresolved rule is reported, never counted as a data failure.
+        self.assertFalse(any(f['check_type'] == 'RULE_VIOLATION' and f['target_col'] is None
+                             for f in report['failures']))
 
     def test_06_decision_log_appended(self):
         with open('artifacts/decision_log.jsonl', 'r') as f:

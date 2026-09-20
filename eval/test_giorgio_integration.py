@@ -10,8 +10,8 @@ from eval.inject_fault import inject_frozen_sensor
 con = duckdb.connect()
 df = con.execute('SELECT * FROM read_parquet(?) LIMIT 50', ['data/features/simulationRun=1.0/data_0.parquet']).df()
 
-engine = DataQualityEngine(schema_path='contracts/schema.json', profiles_path='artifacts/profiles.json')
-compiler = RuleCompiler(schema_path='contracts/schema.json')
+engine = DataQualityEngine(schema_path='artifacts/schema.json', profiles_path='artifacts/profiles.json')
+compiler = RuleCompiler(schema_path='artifacts/schema.json')
 
 print('=== 1. TESTING REAL GIORGIO PARQUET BATCH ===')
 rep1 = engine.check_batch(df, batch_id='giorgio_batch_01_clean')
@@ -34,4 +34,6 @@ rules = compiler.compile_rules([
 ])
 rep3 = engine.check_batch(df, batch_id='giorgio_batch_03_rules', compiled_rules=rules)
 for r in rep3['compiled_rules_evaluated']:
-    print('Rule ' + r['rule_id'] + ': ' + r['raw_text'] + ' -> Target: ' + r['target_col'] + ' -> Status: ' + r['status'])
+    # target_col is None when the compiler could not resolve the rule; that is a
+    # legitimate outcome the report carries, not a crash of this script.
+    print(f"Rule {r['rule_id']}: {r['raw_text']} -> Target: {r['target_col']} -> Status: {r['status']}")

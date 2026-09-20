@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import duckdb
 import argparse
 
@@ -37,8 +36,11 @@ class DataQualityMonitor:
         try:
             df = con.execute(query).df()
         except Exception as e:
-            print(f"[S5] ERROR: Could not load data for batch {batch_id}: {e}")
-            return
+            # Used to print and return 0, so the orchestrator went on to S6 and
+            # S7 with a stale dq_report.json (or none) and reported success.
+            # No batch means no verdict: say so and fail.
+            raise SystemExit(f"[S5] ERROR: Could not load data for batch {batch_id} from "
+                             f"{self.data_dir}/features/{batch_id}/: {e}. Run S1 first.")
             
         # Compile some natural language rules
         rules = compiler.compile_rules([
@@ -48,16 +50,17 @@ class DataQualityMonitor:
         
         report = engine.check_batch(df, batch_id=batch_id, compiled_rules=rules)
         
-        # S5 must write to contracts/dq_report.json
-        os.makedirs(self.contracts_dir, exist_ok=True)
-        with open(os.path.join(self.contracts_dir, 'dq_report.json'), 'w') as f:
-            json.dump(report, f, indent=2)
-            
+        # check_batch() has already written artifacts/dq_report.json, the one
+        # artifact S5 owns (CONTRACTS section 6). A second copy used to be
+        # written into contracts/, which holds schemas, not artifacts, and
+        # nothing read it.
         trust_verdict = report['trust_verdict']
         print(f"[S5] Data Quality Gate complete. Verdict: {trust_verdict}.")
         if trust_verdict == "UNTRUSTED":
-            print("[S5] PIPELINE STOPPED: Data is not reliable.")
-        print("[S5] dq_report.json generated in contracts folder.")
+            # S5 itself does not stop anything: S7 reads this verdict and
+            # refuses to diagnose a process fault on untrusted data.
+            print("[S5] Data is not reliable: S7 will refuse to diagnose this batch.")
+        print(f"[S5] dq_report.json written to {self.artifacts_dir}/.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="S5 Data Quality Trust Gate")
