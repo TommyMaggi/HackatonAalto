@@ -1143,19 +1143,11 @@ async function init() {
 
   try {
     let semanticsData, profilesData, relationsData;
-    try {
-      [semanticsData, profilesData, relationsData] = await Promise.all([
-        loadJSON("../artifacts/semantics.json"),
-        loadJSON("../artifacts/profiles.json"),
-        loadJSON("../artifacts/relations.json")
-      ]);
-    } catch(e) {
-      [semanticsData, profilesData, relationsData] = await Promise.all([
-        loadJSON("../artifacts/from_team/semantics.json"),
-        loadJSON("../artifacts/from_team/profiles.json"),
-        loadJSON("../artifacts/from_team/relations.json")
-      ]);
-    }
+    [semanticsData, profilesData, relationsData] = await Promise.all([
+      loadJSON("../artifacts/semantics.json"),
+      loadJSON("../artifacts/profiles.json"),
+      loadJSON("../artifacts/relations.json")
+    ]);
 
     state.inferences = normaliseInferences(semanticsData);
     state.evidenceById = mergeEvidence(
@@ -1168,7 +1160,7 @@ async function init() {
 
     // Check gate status: just 'Trusted' or 'Untrusted'
     try {
-      const dq = await loadJSON("../artifacts/dq_report.json").catch(() => loadJSON("../artifacts/from_team/dq_report.json"));
+      const dq = await loadJSON("../artifacts/dq_report.json");
       const gate = document.getElementById("gate-status");
       const text = document.getElementById("gate-text");
       if (dq && dq.trust_verdict === "UNTRUSTED") {

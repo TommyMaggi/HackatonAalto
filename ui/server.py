@@ -37,11 +37,9 @@ SCHEMA_PATH = ROOT / "contracts" / "semantics.schema.json"
 DECISION_LOG_PATH = ROOT / "artifacts" / "decision_log.jsonl"
 BACKUP_LOG_PATH = ROOT / "artifacts" / "decision_log_backup.jsonl"
 EXAMPLE_LOG_PATH = ROOT / "artifacts" / "examples" / "decision_log.jsonl"
-FROM_TEAM_SEMANTICS = ROOT / "artifacts" / "from_team" / "semantics.json"
 
 DIAGNOSIS_PATH = ROOT / "artifacts" / "diagnosis.json"
 DIAGNOSIS_SCHEMA_PATH = ROOT / "contracts" / "diagnosis.schema.json"
-FROM_TEAM_DIAGNOSIS = ROOT / "artifacts" / "from_team" / "diagnosis.json"
 
 VALID_ACTIONS = {"accept", "contest", "override", "cancel_override"}
 VALID_DIAGNOSIS_ACTIONS = {"accept", "contest", "overturn"}
@@ -50,11 +48,11 @@ DIAGNOSIS_REVIEW_ACTION = {"accept": "accepted", "contest": "questioned", "overt
 # Evidence pools the question box may draw on to back an entry it cites.
 # Never data/, never a raw artifact wholesale -- only the objects a retrieved
 # log entry's evidence_ids actually name.
-EVIDENCE_SOURCE_PAIRS = [
-    (ROOT / "artifacts" / "profiles.json", ROOT / "artifacts" / "from_team" / "profiles.json"),
-    (ROOT / "artifacts" / "relations.json", ROOT / "artifacts" / "from_team" / "relations.json"),
-    (ROOT / "artifacts" / "drift_events.json", ROOT / "artifacts" / "from_team" / "drift_events.json"),
-    (ROOT / "artifacts" / "dq_report.json", ROOT / "artifacts" / "from_team" / "dq_report.json"),
+EVIDENCE_SOURCES = [
+    ROOT / "artifacts" / "profiles.json",
+    ROOT / "artifacts" / "relations.json",
+    ROOT / "artifacts" / "drift_events.json",
+    ROOT / "artifacts" / "dq_report.json",
 ]
 
 QA_ANSWER_SCHEMA = {
@@ -94,10 +92,7 @@ def _validate_semantics(doc: dict) -> None:
 
 def _load_semantics() -> dict:
     if not SEMANTICS_PATH.exists():
-        if FROM_TEAM_SEMANTICS.exists():
-            shutil.copy2(FROM_TEAM_SEMANTICS, SEMANTICS_PATH)
-        else:
-            raise FileNotFoundError(f"{SEMANTICS_PATH} does not exist.")
+        raise FileNotFoundError(f"{SEMANTICS_PATH} does not exist. Run S4 first.")
     return json.loads(SEMANTICS_PATH.read_text(encoding="utf-8"))
 
 
@@ -126,10 +121,7 @@ def _validate_diagnosis(doc) -> None:
 
 def _load_diagnosis():
     if not DIAGNOSIS_PATH.exists():
-        if FROM_TEAM_DIAGNOSIS.exists():
-            shutil.copy2(FROM_TEAM_DIAGNOSIS, DIAGNOSIS_PATH)
-        else:
-            raise FileNotFoundError(f"{DIAGNOSIS_PATH} does not exist.")
+        raise FileNotFoundError(f"{DIAGNOSIS_PATH} does not exist. Run S7 first.")
     return json.loads(DIAGNOSIS_PATH.read_text(encoding="utf-8"))
 
 
@@ -220,20 +212,23 @@ def _collect_evidence_any(container) -> dict:
     return {item["evidence_id"]: item for item in items if isinstance(item, dict) and item.get("evidence_id")}
 
 
-def _load_json_with_fallback(primary: Path, fallback: Path):
-    for path in (primary, fallback):
-        if path.exists():
-            try:
-                return json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-    return None
+def _load_json_if_present(path: Path):
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        # A half-written or corrupt artifact used to vanish from the evidence
+        # pool without a word. Cited evidence that cannot be found is worth a
+        # line on stderr.
+        sys.stderr.write(f"warning: {path.name} is not valid JSON and was skipped: {exc}\n")
+        return None
 
 
 def _build_evidence_pool() -> dict:
     pool: dict = {}
-    for primary, fallback in EVIDENCE_SOURCE_PAIRS:
-        pool.update(_collect_evidence_any(_load_json_with_fallback(primary, fallback)))
+    for path in EVIDENCE_SOURCES:
+        pool.update(_collect_evidence_any(_load_json_if_present(path)))
     return pool
 
 
@@ -587,8 +582,11 @@ class Handler(SimpleHTTPRequestHandler):
                 inf["epistemic_status"] = "accepted"
                 _validate_semantics(doc)
                 _write_semantics_atomic(doc)
-            except Exception:
-                pass
+            except Exception as exc:
+                # The review is still logged below; only the marker on the
+                # artifact failed. Say so instead of hiding it.
+                sys.stderr.write(f"warning: accept for {col_id} was logged but semantics.json "
+                                 f"was not updated: {exc}\n")
             entry_id = log.append(
                 stage="S4_semantics",
                 kind="human_review",
@@ -609,8 +607,11 @@ class Handler(SimpleHTTPRequestHandler):
                 inf["epistemic_status"] = "contested"
                 _validate_semantics(doc)
                 _write_semantics_atomic(doc)
-            except Exception:
-                pass
+            except Exception as exc:
+                # The review is still logged below; only the marker on the
+                # artifact failed. Say so instead of hiding it.
+                sys.stderr.write(f"warning: contest for {col_id} was logged but semantics.json "
+                                 f"was not updated: {exc}\n")
             entry_id = log.append(
                 stage="S4_semantics",
                 kind="human_review",

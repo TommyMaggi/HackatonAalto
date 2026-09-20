@@ -664,11 +664,6 @@ async function loadJSON(url) {
   return res.json();
 }
 
-async function loadWithFallback(primary, fallback) {
-  try { return await loadJSON(primary); }
-  catch (e) { return await loadJSON(fallback); }
-}
-
 function escapeHtml(str) {
   if (str === null || str === undefined) return "";
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1145,11 +1140,11 @@ async function init() {
 
   try {
     const [diagnosisData, semanticsData, driftEvents, profilesData, relationsData] = await Promise.all([
-      loadWithFallback("../artifacts/diagnosis.json", "../artifacts/from_team/diagnosis.json"),
-      loadWithFallback("../artifacts/semantics.json", "../artifacts/from_team/semantics.json"),
-      loadWithFallback("../artifacts/drift_events.json", "../artifacts/from_team/drift_events.json").catch(() => []),
-      loadWithFallback("../artifacts/profiles.json", "../artifacts/from_team/profiles.json").catch(() => ({})),
-      loadWithFallback("../artifacts/relations.json", "../artifacts/from_team/relations.json").catch(() => []),
+      loadJSON("../artifacts/diagnosis.json"),
+      loadJSON("../artifacts/semantics.json"),
+      loadJSON("../artifacts/drift_events.json").catch(() => []),
+      loadJSON("../artifacts/profiles.json").catch(() => ({})),
+      loadJSON("../artifacts/relations.json").catch(() => []),
     ]);
 
     state.semanticsByCol = buildSemanticsLookup(semanticsData);
@@ -1164,7 +1159,7 @@ async function init() {
     state.diagnoses = normaliseDiagnoses(diagnosisData);
 
     try {
-      const dq = await loadWithFallback("../artifacts/dq_report.json", "../artifacts/from_team/dq_report.json");
+      const dq = await loadJSON("../artifacts/dq_report.json");
       Object.assign(state.evidenceById, collectEvidenceAny(dq));
       const gate = document.getElementById("gate-status");
       const text = document.getElementById("gate-text");

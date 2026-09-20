@@ -30,7 +30,6 @@ from trust import actions as trust_actions
 ROOT = Path(__file__).resolve().parent.parent
 
 ARTIFACTS = ROOT / "artifacts"
-FROM_TEAM = ARTIFACTS / "from_team"
 DRIFT_RUNS_DIR = ARTIFACTS / "drift_events"
 MACHINE_CONTEXT_DIR = ARTIFACTS / "machine_context"
 
@@ -121,7 +120,7 @@ def get_drift(query: dict) -> dict:
     run_id = _safe_id(run_id, "")
     data = _read_json(DRIFT_RUNS_DIR / f"{run_id}.json")
     if data is None:
-        combined = _read_json(ARTIFACTS / "drift_events.json", FROM_TEAM / "drift_events.json")
+        combined = _read_json(ARTIFACTS / "drift_events.json")
         if isinstance(combined, dict) and (combined.get("batch") or {}).get("run_id") == run_id:
             data = combined
     if data is None:
@@ -173,9 +172,9 @@ def get_channels(query: dict) -> dict:
     Reader is widened both ways per CLAUDE.md: profiles and semantics may each
     arrive as a map keyed by col_id or as a list of objects carrying one.
     """
-    schema = _read_json(ARTIFACTS / "schema.json", FROM_TEAM / "schema.json") or {}
-    profiles = _read_json(ARTIFACTS / "profiles.json", FROM_TEAM / "profiles.json") or {}
-    semantics = _read_json(ARTIFACTS / "semantics.json", FROM_TEAM / "semantics.json") or {}
+    schema = _read_json(ARTIFACTS / "schema.json") or {}
+    profiles = _read_json(ARTIFACTS / "profiles.json") or {}
+    semantics = _read_json(ARTIFACTS / "semantics.json") or {}
 
     profiles = _keyed_by_col(profiles)
     semantics = _keyed_by_col(semantics)
@@ -438,7 +437,7 @@ def known_evidence_ids(refresh: bool = False) -> set[str]:
                     _harvest(value)
 
     for name in ("profiles.json", "relations.json", "dq_report.json", "drift_events.json"):
-        _harvest(_read_json(ARTIFACTS / name, FROM_TEAM / name))
+        _harvest(_read_json(ARTIFACTS / name))
     for path in sorted(DRIFT_RUNS_DIR.glob("*.json"))[:200]:
         _harvest(_read_json(path))
     return _EVIDENCE_IDS
